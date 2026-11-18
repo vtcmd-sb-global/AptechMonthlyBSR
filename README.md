@@ -54,7 +54,7 @@ The default refresh policy is **Preserve application modifications**:
 - New months and new allocations are added.
 - Existing allocations are matched by report month, faculty, career, lab, time slot, day group and batch.
 - For allocations imported by this version, source fields are refreshed only while their current values still match the last imported workbook values. Values changed inside the application are retained.
-- Existing records created before import-baseline tracking are retained as-is on the first merge.
+- Existing records created before import-baseline tracking are refreshed on the first merge only when their `created_at` and `updated_at` timestamps match; records previously edited in the application are preserved.
 - Source rows are never used to delete allocations that are absent from a later workbook.
 - A database backup is created before each changed-workbook import. Failed validation or import is rolled back.
 
