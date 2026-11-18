@@ -270,8 +270,6 @@ def parse_sheet_allocations(ws, year_month: str, maps: dict, conn) -> List[dict]
         return best[1] if best else "L1"
 
     results = []
-    known_inits = set(maps["faculty"].keys())
-
     # Scan all slot columns for faculty pattern cells
     for (slot, day), start_c in SLOT_DAY_COLS.items():
         for r in range(1, 55):
