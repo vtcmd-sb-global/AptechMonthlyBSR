@@ -25,9 +25,9 @@ def _can_write(directory: Path) -> bool:
 
 
 def get_database_dir() -> Path:
-    # Keep an existing portable database in place; otherwise use per-user storage.
+    # Use the portable folder whenever writable; Program Files falls back to AppData.
     for candidate in (APP_ROOT / "database", RESOURCE_ROOT / "database"):
-        if (candidate / "monthly_bsr.db").is_file() and _can_write(candidate):
+        if _can_write(candidate):
             return candidate
     return USER_DATA_ROOT / "database"
 
