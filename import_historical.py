@@ -511,7 +511,7 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = False, fo
         previous = conn.execute(
             "SELECT sha256 FROM import_sources WHERE source_path=?", (str(src),)
         ).fetchone()
-        if previous and previous[0] == digest and not force:
+        if previous and previous[0] == digest and not force and not replace_all:
             return {"file": str(src), "months": {}, "total_allocations": 0,
                     "inserted_allocations": 0, "skipped_duplicates": 0,
                     "skipped": True, "reason": "Workbook has not changed"}
