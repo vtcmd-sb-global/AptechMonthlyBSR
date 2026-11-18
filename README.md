@@ -47,7 +47,7 @@ python main.py
 
 ## Refreshing the source workbook
 
-For the Windows application, place the latest GLS Labstatus workbook in the `data` folder beside `AptechMonthlyBSR.exe`. The application discovers the newest `.xlsx` workbook in that folder and checks its content hash at startup. Replacing or updating the workbook triggers an import on the next launch; an unchanged workbook is not imported again.
+For the Windows application, place the latest GLS Labstatus workbook in the `data` folder beside `AptechMonthlyBSR.exe`. The application discovers the newest `.xlsx` workbook in that folder and checks its content hash at startup. Replacing or updating the workbook triggers an import on the next launch; an unchanged workbook is not imported again. The same latest workbook is used as the export master template so its newest month sheet and historical tabs are carried into generated reports.
 
 The default refresh policy is **Preserve application modifications**:
 
