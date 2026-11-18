@@ -1960,12 +1960,16 @@ class MainApp(tk.Tk):
                 key=lambda p: p.stat().st_mtime,
                 reverse=True,
             )
-            if files and hasattr(self, "excel_preview"):
-                self.excel_preview.load_file(files[0])
-            elif hasattr(self, "excel_preview"):
+            if hasattr(self, "excel_preview"):
                 source = find_source_workbook()
-                if source:
+                latest_output = files[0] if files else None
+                if source and (
+                    latest_output is None
+                    or source.stat().st_mtime > latest_output.stat().st_mtime
+                ):
                     self.excel_preview.load_file(source)
+                elif latest_output:
+                    self.excel_preview.load_file(latest_output)
         except Exception:
             pass
 
