@@ -24,6 +24,7 @@ _LEGACY_PATHS = [
     DB_DIR / "lab_status.db",          # previous name before rename to monthly_bsr.db
     Path("/tmp") / "aptech_timetable.db",
     ROOT / "data" / "timetable.db",
+    ROOT / "database" / "monthly_bsr.db",
     RESOURCE_ROOT / "database" / "monthly_bsr.db",
     RESOURCE_ROOT / "database" / "lab_status.db",
 ]
