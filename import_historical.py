@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 import hashlib
 import shutil
+from difflib import SequenceMatcher
 from datetime import datetime, date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -257,10 +258,21 @@ def parse_sheet_allocations(ws, year_month: str, maps: dict, conn) -> List[dict]
             if not faculty_token:
                 continue
             token_key = faculty_token.upper()
+            normalized_token = _normalize_faculty_name(faculty_token)
             if token_key in known_inits:
                 initials = token_key
             else:
-                initials = maps.get("faculty_names", {}).get(_normalize_faculty_name(faculty_token), "")
+                initials = maps.get("faculty_names", {}).get(normalized_token, "")
+                if not initials and len(normalized_token) >= 4:
+                    scores = [
+                        (SequenceMatcher(None, normalized_token, alias).ratio(), code)
+                        for alias, code in maps.get("faculty_names", {}).items()
+                    ]
+                    scores.sort(reverse=True)
+                    if scores and scores[0][0] >= 0.86:
+                        tied = [code for score, code in scores if score == scores[0][0]]
+                        if len(set(tied)) == 1:
+                            initials = scores[0][1]
             if not initials:
                 continue
 
