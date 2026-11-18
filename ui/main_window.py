@@ -18,7 +18,9 @@ ROOT = Path(__file__).parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-OUTPUT_DIR = ROOT / "Output"
+from paths import get_output_dir, find_source_workbook
+
+OUTPUT_DIR = get_output_dir()
 
 from database import init_db
 from ui.excel_preview import ExcelPreviewPanel
@@ -1960,6 +1962,10 @@ class MainApp(tk.Tk):
             )
             if files and hasattr(self, "excel_preview"):
                 self.excel_preview.load_file(files[0])
+            elif hasattr(self, "excel_preview"):
+                source = find_source_workbook()
+                if source:
+                    self.excel_preview.load_file(source)
         except Exception:
             pass
 
