@@ -106,7 +106,7 @@ Source: "data\*.xlsx"; DestDir: "{app}\data"; Flags: ignoreversion skipifsourced
 Name: "{app}\database"
 Name: "{app}\Output"
 Name: "{app}\templates"
-Name: "{app}\data"
+Name: "{app}\data"; Permissions: users-modify
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
