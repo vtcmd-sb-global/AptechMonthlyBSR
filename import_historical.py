@@ -524,6 +524,9 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = False, fo
         shutil.copy2(db_path, backup)
 
     wb = load_workbook(src, data_only=True)
+    if not any(sheet_to_year_month(name) for name in wb.sheetnames):
+        wb.close()
+        raise ValueError("The selected workbook contains no month-named BSR sheets.")
     summary = {"file": str(src), "months": {}, "total_allocations": 0,
                "inserted_allocations": 0, "skipped_duplicates": 0}
 
@@ -694,6 +697,12 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = False, fo
                 "students": metrics.get("total_students", 0),
             }
             summary["total_allocations"] += len(allocs)
+
+        if summary["total_allocations"] == 0:
+            raise ValueError(
+                "No allocation rows were recognized in the workbook. "
+                "The import was rolled back; check the faculty roster and sheet layout."
+            )
 
         conn.execute(
             """
