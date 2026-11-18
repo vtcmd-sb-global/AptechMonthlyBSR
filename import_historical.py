@@ -4,20 +4,20 @@
 from __future__ import annotations
 
 import re
+import hashlib
+import shutil
+from difflib import SequenceMatcher
 from datetime import datetime, date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from openpyxl import load_workbook
 
-from database import init_db, db_session
+from database import init_db, db_session, get_db_path
+from paths import find_source_workbook
 
-ROOT = Path(__file__).parent
-HIST_CANDIDATES = [
-    Path("/home/workdir/attachments/21-August-2026 GLS Labstatus.xlsx"),
-    ROOT / "data" / "21-August-2026 GLS Labstatus.xlsx",
-    Path("/home/workdir/attachments/GLS_Labstatus_template.xlsx"),
-]
+ROOT = Path(__file__).resolve().parent
+HIST_CANDIDATES = []
 
 SLOT_DAY_COLS = {
     ("B", "MWF"): 2, ("B", "TTS"): 8,
@@ -136,7 +136,7 @@ def _to_int(v) -> int:
 
 
 def _parse_faculty_line(text) -> Tuple[str, str]:
-    """Only accept '(COURSE) INIT' patterns e.g. '(AI) MS'."""
+    """Return the faculty token and course from parenthesized or plain names."""
     if text is None or _is_date_like(text):
         return "", ""
     t = _cell_str(text)
@@ -144,17 +144,51 @@ def _parse_faculty_line(text) -> Tuple[str, str]:
         return "", ""
     if re.search(r"\d{4}", t) and "-" in t:
         return "", ""
-    # Must be (something) initials
-    m = re.match(r"^\(([^)]+)\)\s*([A-Za-z]{1,5})\s*$", t)
-    if not m:
-        m = re.match(r"^\(([^)]+)\)\s+([A-Za-z]{1,5})\b", t)
-    if not m:
-        return "", ""
-    course, init = m.group(1).strip(), m.group(2).upper()
-    # reject if course looks like day group or empty
-    if course.upper() in ("MWF", "TTS", "M/W/F", "T/T/S"):
-        return "", ""
-    return init, course
+    m = re.match(r"^\(([^)]+)\)\s*(.*?)\s*$", t)
+    if m:
+        course, token = m.group(1).strip(), m.group(2).strip()
+        if course.upper() in ("MWF", "TTS", "M/W/F", "T/T/S") or not token:
+            return "", ""
+        return token, course
+    return t, ""
+
+
+def _normalize_faculty_name(value: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", (value or "").lower())
+
+
+def _faculty_aliases(full_name: str) -> set[str]:
+    parts = re.findall(r"[A-Za-z]+", full_name or "")
+    aliases = {_normalize_faculty_name(full_name)}
+    if parts:
+        for part in parts:
+            aliases.add(_normalize_faculty_name(part))
+        if len(parts) >= 2:
+            aliases.add(_normalize_faculty_name(parts[0][0] + "." + parts[-1]))
+            aliases.add(_normalize_faculty_name(parts[0][0] + parts[-1]))
+    return {a for a in aliases if a}
+
+
+def _resolve_faculty_initials(token: str, maps: dict) -> str:
+    """Resolve initials or a roster name; reject ordinary grid text."""
+    known = maps.get("faculty", {})
+    token_key = (token or "").strip().upper()
+    if token_key in known:
+        return token_key
+    normalized = _normalize_faculty_name(token)
+    resolved = maps.get("faculty_names", {}).get(normalized, "")
+    if resolved or len(normalized) < 4:
+        return resolved
+    scores = [
+        (SequenceMatcher(None, normalized, alias).ratio(), code)
+        for alias, code in maps.get("faculty_names", {}).items()
+    ]
+    scores.sort(reverse=True)
+    if scores and scores[0][0] >= 0.86:
+        tied = {code for score, code in scores if score == scores[0][0]}
+        if len(tied) == 1:
+            return scores[0][1]
+    return ""
 
 
 def _norm_career(text: str) -> str:
@@ -236,16 +270,15 @@ def parse_sheet_allocations(ws, year_month: str, maps: dict, conn) -> List[dict]
         return best[1] if best else "L1"
 
     results = []
-    known_inits = set(maps["faculty"].keys())
-
     # Scan all slot columns for faculty pattern cells
     for (slot, day), start_c in SLOT_DAY_COLS.items():
         for r in range(1, 55):
             fac_txt = grid.get((r, start_c))
-            initials, _hint = _parse_faculty_line(fac_txt)
-            if not initials:
+            faculty_token, _hint = _parse_faculty_line(fac_txt)
+            if not faculty_token:
                 continue
-            if initials not in known_inits and not re.fullmatch(r"[A-Z]{1,5}", initials):
+            initials = _resolve_faculty_initials(faculty_token, maps)
+            if not initials:
                 continue
 
             # Block rows relative to faculty row
@@ -273,8 +306,9 @@ def parse_sheet_allocations(ws, year_month: str, maps: dict, conn) -> List[dict]
 
             careers_found = []
             for cr in range(career_start, career_start + 4):
-                # stop if we hit next faculty header
-                if _parse_faculty_line(grid.get((cr, start_c)))[0]:
+                # Stop only on a token that resolves to a rostered faculty member.
+                next_token, _next_hint = _parse_faculty_line(grid.get((cr, start_c)))
+                if next_token and _resolve_faculty_initials(next_token, maps):
                     break
                 cval = grid.get((cr, start_c))
                 if not _is_career(cval):
@@ -458,55 +492,139 @@ def purge_bad_data(conn) -> None:
         conn.execute(f"DELETE FROM faculty WHERE id IN ({ph})", bad2)
 
 
-def import_historical(path: Optional[Path] = None, replace_all: bool = True) -> dict:
+def import_historical(path: Optional[Path] = None, replace_all: bool = False, force: bool = False) -> dict:
+    """Merge source rows without overwriting application-side edits."""
     init_db()
-    src = path
+    src = Path(path) if path is not None else find_source_workbook()
     if src is None:
-        for c in HIST_CANDIDATES:
-            if c.exists():
-                src = c
+        for candidate in HIST_CANDIDATES:
+            if candidate.exists():
+                src = candidate
                 break
-    if src is None or not Path(src).exists():
-        raise FileNotFoundError("Historical BSR Excel not found")
-    src = Path(src)
-    wb = load_workbook(src, data_only=True)
+    if src is None or not src.exists():
+        raise FileNotFoundError("No source BSR workbook found in the data folder")
+    src = src.resolve()
+    digest = hashlib.sha256(src.read_bytes()).hexdigest()
 
-    summary = {"file": str(src), "months": {}, "total_allocations": 0}
+    with db_session() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS import_sources (
+                source_path TEXT PRIMARY KEY,
+                sha256 TEXT NOT NULL,
+                imported_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        previous = conn.execute(
+            "SELECT sha256 FROM import_sources WHERE source_path=?", (str(src),)
+        ).fetchone()
+        if previous and previous[0] == digest and not force and not replace_all:
+            return {"file": str(src), "months": {}, "total_allocations": 0,
+                    "inserted_allocations": 0, "skipped_duplicates": 0,
+                    "skipped": True, "reason": "Workbook has not changed"}
+
+    db_path = get_db_path()
+    if db_path.exists() and db_path.stat().st_size:
+        backup = db_path.with_name(
+            f"{db_path.stem}.pre-import-{datetime.now():%Y%m%d-%H%M%S-%f}{db_path.suffix}"
+        )
+        shutil.copy2(db_path, backup)
+
+    wb = load_workbook(src, data_only=True)
+    if not any(sheet_to_year_month(name) for name in wb.sheetnames):
+        wb.close()
+        raise ValueError("The selected workbook contains no month-named BSR sheets.")
+    summary = {"file": str(src), "months": {}, "total_allocations": 0,
+               "inserted_allocations": 0, "skipped_duplicates": 0}
 
     with db_session() as conn:
         if replace_all:
             conn.execute("DELETE FROM allocations")
             purge_bad_data(conn)
         seed_canonical_faculty(conn)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS allocation_import_baselines (
+                allocation_id INTEGER PRIMARY KEY REFERENCES allocations(id) ON DELETE CASCADE,
+                module_name TEXT,
+                students INTEGER,
+                module_start_date TEXT,
+                actual_start_date TEXT,
+                is_admission_open INTEGER NOT NULL DEFAULT 0
+            )
+        """)
 
-        # merge faculty names from latest sheets
+        roster = []
+        seen_names = set()
         for sheet_name in reversed(wb.sheetnames):
             if not sheet_to_year_month(sheet_name):
                 continue
             for init, name, status in extract_faculty_from_sheet(wb[sheet_name]):
-                row = conn.execute(
-                    "SELECT id, full_name FROM faculty WHERE UPPER(initials)=?",
-                    (init,),
-                ).fetchone()
-                if row:
-                    if row[1] == init or not row[1]:
+                key = _normalize_faculty_name(name)
+                if key and key not in seen_names:
+                    roster.append((init, name, status))
+                    seen_names.add(key)
+
+        for init, name, status in roster:
+            row = conn.execute(
+                "SELECT id, full_name FROM faculty WHERE UPPER(initials)=?", (init,)
+            ).fetchone()
+            if row and (not row[1] or row[1].strip().upper() == init):
+                conn.execute(
+                    "UPDATE faculty SET full_name=?, status=?, active=1 WHERE id=?",
+                    (name, status, row[0]),
+                )
+                continue
+            if row and _normalize_faculty_name(row[1]) == _normalize_faculty_name(name):
+                continue
+            if row:
+                parts = re.findall(r"[A-Za-z]+", name)
+                candidates = []
+                if len(parts) >= 2:
+                    candidates.extend((parts[0][0] + parts[-1][0],
+                                       parts[0][0] + parts[-1][:2],
+                                       parts[0][0] + parts[-1][:3]))
+                candidates.append((init + "X")[:5])
+                for candidate in candidates:
+                    existing = conn.execute(
+                        "SELECT id, full_name FROM faculty WHERE UPPER(initials)=?",
+                        (candidate.upper(),),
+                    ).fetchone()
+                    if not existing:
+                        conn.execute(
+                            "INSERT INTO faculty (initials, full_name, status, active) VALUES (?,?,?,1)",
+                            (candidate.upper(), name, status),
+                        )
+                        break
+                    if _normalize_faculty_name(existing[1]) in (
+                        candidate.lower(), _normalize_faculty_name(name)
+                    ):
                         conn.execute(
                             "UPDATE faculty SET full_name=?, status=?, active=1 WHERE id=?",
-                            (name, status, row[0]),
+                            (name, status, existing[0]),
                         )
-                else:
-                    conn.execute(
-                        "INSERT INTO faculty (initials, full_name, status, active) VALUES (?,?,?,1)",
-                        (init, name, status),
-                    )
+                        break
+            else:
+                conn.execute(
+                    "INSERT INTO faculty (initials, full_name, status, active) VALUES (?,?,?,1)",
+                    (init, name, status),
+                )
 
+        faculty_rows = conn.execute("SELECT initials, full_name, id FROM faculty").fetchall()
         maps = {
-            "faculty": {r[0].upper(): r[1] for r in conn.execute("SELECT initials, id FROM faculty").fetchall()},
+            "faculty": {r[0].upper(): r[2] for r in faculty_rows},
+            "faculty_names": {},
             "labs": {r[0].upper(): r[1] for r in conn.execute("SELECT lab_code, id FROM labs").fetchall()},
             "careers": {r[0].upper(): r[1] for r in conn.execute("SELECT code, id FROM careers").fetchall()},
             "slots": {r[0].upper(): r[1] for r in conn.execute("SELECT code, id FROM time_slots").fetchall()},
             "days": {r[0].upper(): r[1] for r in conn.execute("SELECT code, id FROM day_groups").fetchall()},
         }
+        aliases = {}
+        for initials, full_name, _fid in faculty_rows:
+            for alias in _faculty_aliases(full_name):
+                aliases.setdefault(alias, set()).add(initials.upper())
+        for alias, values in aliases.items():
+            if len(values) == 1:
+                maps["faculty_names"][alias] = next(iter(values))
+
         for i in range(1, 8):
             code = f"L{i}"
             if code not in maps["labs"]:
@@ -518,11 +636,90 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = True) -> 
             if not ym:
                 continue
             ws = wb[sheet_name]
-            if replace_all:
-                conn.execute("DELETE FROM allocations WHERE report_month=?", (ym,))
             allocs = parse_sheet_allocations(ws, ym, maps, conn)
             for a in allocs:
-                conn.execute(
+                existing_allocation = conn.execute(
+                    """
+                    SELECT id, module_name, students, module_start_date,
+                           actual_start_date, is_admission_open, created_at, updated_at
+                    FROM allocations
+                    WHERE report_month=? AND faculty_id=? AND career_id=?
+                      AND lab_id=? AND time_slot_id=? AND day_group_id=?
+                      AND COALESCE(batch_code, '')=COALESCE(?, '')
+                    LIMIT 1
+                    """,
+                    (ym, a["faculty_id"], a["career_id"], a["lab_id"],
+                     a["time_slot_id"], a["day_group_id"], a.get("batch_code")),
+                ).fetchone()
+                source_values = {
+                    "module_name": a.get("module_name"),
+                    "students": a.get("students", 0),
+                    "module_start_date": a.get("module_start_date"),
+                    "actual_start_date": a.get("actual_start_date"),
+                    "is_admission_open": int(a.get("is_admission_open") or 0),
+                }
+                if existing_allocation:
+                    summary["skipped_duplicates"] += 1
+                    aid = existing_allocation["id"]
+                    baseline = conn.execute(
+                        "SELECT module_name, students, module_start_date, actual_start_date, is_admission_open "
+                        "FROM allocation_import_baselines WHERE allocation_id=?",
+                        (aid,),
+                    ).fetchone()
+                    if baseline:
+                        fields_to_update = []
+                        values_to_update = []
+                        for field, source_value in source_values.items():
+                            if existing_allocation[field] == baseline[field]:
+                                fields_to_update.append(f"{field}=?")
+                                values_to_update.append(source_value)
+                        if fields_to_update:
+                            conn.execute(
+                                "UPDATE allocations SET " + ", ".join(fields_to_update) +
+                                ", updated_at=datetime('now') WHERE id=?",
+                                (*values_to_update, aid),
+                            )
+                        conn.execute(
+                            """
+                            UPDATE allocation_import_baselines
+                            SET module_name=?, students=?, module_start_date=?,
+                                actual_start_date=?, is_admission_open=?
+                            WHERE allocation_id=?
+                            """,
+                            (source_values["module_name"], source_values["students"],
+                             source_values["module_start_date"], source_values["actual_start_date"],
+                             source_values["is_admission_open"], aid),
+                        )
+                    else:
+                        # Existing records predate merge tracking. If they have
+                        # never been edited in the app (created_at == updated_at),
+                        # refresh their source-managed fields once. Otherwise
+                        # retain the existing application-side values.
+                        if existing_allocation["created_at"] == existing_allocation["updated_at"]:
+                            conn.execute(
+                                """
+                                UPDATE allocations SET module_name=?, students=?,
+                                    module_start_date=?, actual_start_date=?,
+                                    is_admission_open=?, updated_at=datetime('now')
+                                WHERE id=?
+                                """,
+                                (source_values["module_name"], source_values["students"],
+                                 source_values["module_start_date"], source_values["actual_start_date"],
+                                 source_values["is_admission_open"], aid),
+                            )
+                        conn.execute(
+                            """
+                            INSERT INTO allocation_import_baselines
+                            (allocation_id, module_name, students, module_start_date,
+                             actual_start_date, is_admission_open)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                            """,
+                            (aid, source_values["module_name"], source_values["students"],
+                             source_values["module_start_date"], source_values["actual_start_date"],
+                             source_values["is_admission_open"]),
+                        )
+                    continue
+                cur = conn.execute(
                     """
                     INSERT INTO allocations (
                         faculty_id, career_id, lab_id, time_slot_id, day_group_id,
@@ -539,6 +736,19 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = True) -> 
                         a.get("notes"), int(a.get("is_admission_open") or 0), ym,
                     ),
                 )
+                conn.execute(
+                    """
+                    INSERT INTO allocation_import_baselines
+                    (allocation_id, module_name, students, module_start_date,
+                     actual_start_date, is_admission_open)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (cur.lastrowid, source_values["module_name"], source_values["students"],
+                     source_values["module_start_date"], source_values["actual_start_date"],
+                     source_values["is_admission_open"]),
+                )
+                summary["inserted_allocations"] += 1
+
             metrics = parse_sheet_metrics(ws, ym)
             if not metrics.get("total_students"):
                 metrics["total_students"] = sum(x.get("students", 0) for x in allocs)
@@ -558,7 +768,7 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = True) -> 
                 "stc_beg", "stc_end", "sp_beg", "sp_end",
                 "total_batches", "total_students",
                 "mwf_batches", "mwf_students", "tts_batches", "tts_students",
-                "report_path", "notes",
+                "notes",
             )
             vals = [metrics.get(f, 0) for f in fields]
             if existing:
@@ -569,9 +779,9 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = True) -> 
                 )
             else:
                 cols = ", ".join(["year_month"] + list(fields))
-                ph = ", ".join(["?"] * (1 + len(fields)))
+                placeholders = ", ".join(["?"] * (1 + len(fields)))
                 conn.execute(
-                    f"INSERT INTO monthly_bsr_metrics ({cols}) VALUES ({ph})",
+                    f"INSERT INTO monthly_bsr_metrics ({cols}) VALUES ({placeholders})",
                     (ym, *vals),
                 )
 
@@ -582,23 +792,24 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = True) -> 
             }
             summary["total_allocations"] += len(allocs)
 
-        # final purge of any residual garbage faculty
-        purge_bad_data(conn)
-        # remove faculty names that are career codes / modules if no valid name
+        if summary["total_allocations"] == 0:
+            raise ValueError(
+                "No allocation rows were recognized in the workbook. "
+                "The import was rolled back; check the faculty roster and sheet layout."
+            )
+
         conn.execute(
             """
-            DELETE FROM faculty WHERE id NOT IN (SELECT DISTINCT faculty_id FROM allocations)
-              AND UPPER(initials) IN (
-                'HTML','PHP','JAVA','SQL','SEO','GIT','FSA','MUI','PWD','STC','SP',
-                'WORDPRESS','CDMA','CPISM','DISM','OST','AI','MWF','TTS','FBDS',
-                'MYSQL','DART','VAT','ENT','PBD'
-              )
-            """
+            INSERT INTO import_sources (source_path, sha256, imported_at)
+            VALUES (?, ?, datetime('now'))
+            ON CONFLICT(source_path) DO UPDATE SET
+                sha256=excluded.sha256, imported_at=excluded.imported_at
+            """,
+            (str(src), digest),
         )
 
     wb.close()
     return summary
-
 
 if __name__ == "__main__":
     s = import_historical()

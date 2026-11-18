@@ -32,14 +32,11 @@ from models import (
     derive_course_from_batch,
 )
 from calculations import full_dashboard
+from paths import get_output_dir, get_template_candidates
 
 
-ROOT = Path(__file__).parent
-TEMPLATE_CANDIDATES = [
-    ROOT / "templates" / "21-August-2026 GLS Labstatus.xlsx",
-    ROOT / "templates" / "GLS_Labstatus_template.xlsx",
-    ROOT / "data" / "21-August-2026 GLS Labstatus.xlsx",
-]
+ROOT = Path(__file__).resolve().parent
+TEMPLATE_CANDIDATES = get_template_candidates()
 
 # Day-group column starts (1-based); each block is 6 columns wide
 SLOT_DAY_COLS = {
@@ -260,7 +257,7 @@ def export_workbook(
         year_month = datetime.now().strftime("%Y-%m")
 
     if output_path is None:
-        output_path = ROOT / "Output" / f"BSR_{year_month}.xlsx"
+        output_path = get_output_dir() / f"BSR_{year_month}.xlsx"
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 

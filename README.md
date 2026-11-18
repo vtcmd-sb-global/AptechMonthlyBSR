@@ -45,6 +45,23 @@ python seed_sample_data.py      # optional – loads demo rows from August-26 sh
 python main.py
 ```
 
+## Refreshing the source workbook
+
+For the Windows application, place the latest GLS Labstatus workbook in the `data` folder beside `AptechMonthlyBSR.exe`. The application discovers the newest `.xlsx` workbook in that folder and checks its content hash at startup. Replacing or updating the workbook triggers an import on the next launch; an unchanged workbook is not imported again. The same latest workbook is used as the export master template so its newest month sheet and historical tabs are carried into generated reports.
+
+The default refresh policy is **Preserve application modifications**:
+
+- New months and new allocations are added.
+- Existing allocations are matched by report month, faculty, career, lab, time slot, day group and batch.
+- For allocations imported by this version, source fields are refreshed only while their current values still match the last imported workbook values. Values changed inside the application are retained.
+- Existing records created before import-baseline tracking are refreshed on the first merge only when their `created_at` and `updated_at` timestamps match; records previously edited in the application are preserved.
+- Source rows are never used to delete allocations that are absent from a later workbook.
+- A database backup is created before each changed-workbook import. Failed validation or import is rolled back.
+
+The importer reads faculty names from each monthly sheet's roster and resolves full-name labels as well as initials. If the workbook layout is not recognized or no allocation rows can be parsed, the import is rejected instead of marking the workbook as successfully imported.
+
+In packaged Windows builds, the database and generated reports use writable locations. The database uses the existing writable portable database when available; otherwise it is stored under `%LOCALAPPDATA%\\AptechMonthlyBSR\\database`. Generated reports use the app's `Output` folder when writable, otherwise `%LOCALAPPDATA%\\AptechMonthlyBSR\\Output`.
+
 ## How it works
 
 1. **Lookups** (Labs, Faculty, Careers, Time Slots, Day Groups) are managed once.

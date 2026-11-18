@@ -4,30 +4,31 @@
 from pathlib import Path
 import sys
 
-ROOT = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from database import init_db
-from models import list_available_report_months
+from paths import find_source_workbook
 
 
 def ensure_historical_data():
-    """Import multi-month Excel once if fewer than 2 months of data exist."""
+    """Merge the newest source workbook on startup when its contents change."""
     try:
-        months = list_available_report_months()
-        if len(months) >= 3:
+        from import_historical import import_historical
+        src = find_source_workbook()
+        if not src:
+            print("No source BSR workbook found in the data folder.")
             return
-        from import_historical import import_historical, HIST_CANDIDATES
-        src = None
-        for c in HIST_CANDIDATES + [ROOT / "data" / "21-August-2026 GLS Labstatus.xlsx"]:
-            if c.exists():
-                src = c
-                break
-        if src:
-            print(f"Importing historical BSR data from {src.name}…")
-            summary = import_historical(src)
-            print(f"Imported {summary['total_allocations']} allocations across {len(summary['months'])} months.")
+        summary = import_historical(src, replace_all=False)
+        if summary.get("skipped"):
+            print(f"Source workbook unchanged: {src.name}")
+        else:
+            print(
+                f"Imported {summary.get('inserted_allocations', 0)} new allocations "
+                f"across {len(summary.get('months', {}))} months; "
+                f"preserved {summary.get('skipped_duplicates', 0)} existing allocations."
+            )
     except Exception as e:
         print("Historical import skipped:", e)
 

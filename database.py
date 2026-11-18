@@ -10,11 +10,13 @@ from pathlib import Path
 from contextlib import contextmanager
 from typing import Iterator
 
+from paths import APP_ROOT, RESOURCE_ROOT, get_database_dir
+
 # ---------------------------------------------------------------------------
 # Persistent database path - always under the application folder
 # ---------------------------------------------------------------------------
-ROOT = Path(__file__).resolve().parent
-DB_DIR = ROOT / "database"
+ROOT = APP_ROOT
+DB_DIR = get_database_dir()
 DB_PATH = DB_DIR / "monthly_bsr.db"
 
 # Optional legacy paths (used only to migrate data once if present)
@@ -22,6 +24,10 @@ _LEGACY_PATHS = [
     DB_DIR / "lab_status.db",          # previous name before rename to monthly_bsr.db
     Path("/tmp") / "aptech_timetable.db",
     ROOT / "data" / "timetable.db",
+    ROOT / "database" / "monthly_bsr.db",
+    ROOT / "database" / "lab_status.db",
+    RESOURCE_ROOT / "database" / "monthly_bsr.db",
+    RESOURCE_ROOT / "database" / "lab_status.db",
 ]
 
 

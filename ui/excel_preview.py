@@ -6,6 +6,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 from pathlib import Path
+from datetime import datetime
 from typing import Optional, Any, Dict, Tuple, List
 
 from openpyxl import load_workbook
@@ -87,7 +88,7 @@ class ExcelPreviewPanel(ttk.Frame):
     """Tab content: sheet selector + scrollable Excel-like grid."""
 
     MAX_ROWS = 120
-    MAX_COLS = 30
+    MAX_COLS = 75
     MIN_COL_W = 40
     MAX_COL_W = 220
     DEFAULT_ROW_H = 22
@@ -200,14 +201,23 @@ class ExcelPreviewPanel(ttk.Frame):
             self._path = path
             names = list(self._wb.sheetnames)
             self.sheet_combo.configure(values=names)
-            # Prefer current month-looking sheet, else first non-helper
-            prefer = None
+            # Prefer the chronologically newest month sheet, not the first
+            # historical tab (which may be many months older).
+            month_sheets = []
             for n in names:
-                low = n.lower()
-                if low not in ("dashboard summary", "_data", "chart", "chart1"):
-                    prefer = n
-                    break
-            self.sheet_var.set(prefer or (names[0] if names else ""))
+                try:
+                    month_sheets.append((datetime.strptime(n.strip(), "%B-%y"), n))
+                except ValueError:
+                    continue
+            if month_sheets:
+                prefer = max(month_sheets, key=lambda item: item[0])[1]
+            else:
+                prefer = next(
+                    (n for n in names if n.lower() not in
+                     ("dashboard summary", "_data", "chart", "chart1", "sheet14")),
+                    names[0] if names else "",
+                )
+            self.sheet_var.set(prefer)
             self.path_lbl.configure(text=str(path.name))
             self._render_sheet()
         except Exception as e:
