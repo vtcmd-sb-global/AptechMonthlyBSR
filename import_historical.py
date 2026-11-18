@@ -160,7 +160,8 @@ def _faculty_aliases(full_name: str) -> set[str]:
     parts = re.findall(r"[A-Za-z]+", full_name or "")
     aliases = {_normalize_faculty_name(full_name)}
     if parts:
-        aliases.add(_normalize_faculty_name(parts[0]))
+        for part in parts:
+            aliases.add(_normalize_faculty_name(part))
         if len(parts) >= 2:
             aliases.add(_normalize_faculty_name(parts[0][0] + "." + parts[-1]))
             aliases.add(_normalize_faculty_name(parts[0][0] + parts[-1]))
