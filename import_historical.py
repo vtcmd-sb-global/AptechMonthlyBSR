@@ -635,7 +635,7 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = False, fo
                 existing_allocation = conn.execute(
                     """
                     SELECT id, module_name, students, module_start_date,
-                           actual_start_date, is_admission_open
+                           actual_start_date, is_admission_open, created_at, updated_at
                     FROM allocations
                     WHERE report_month=? AND faculty_id=? AND career_id=?
                       AND lab_id=? AND time_slot_id=? AND day_group_id=?
@@ -685,8 +685,22 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = False, fo
                              source_values["is_admission_open"], aid),
                         )
                     else:
-                        # Existing records predate merge tracking. Preserve their
-                        # current values and establish the workbook as the baseline.
+                        # Existing records predate merge tracking. If they have
+                        # never been edited in the app (created_at == updated_at),
+                        # refresh their source-managed fields once. Otherwise
+                        # retain the existing application-side values.
+                        if existing_allocation["created_at"] == existing_allocation["updated_at"]:
+                            conn.execute(
+                                """
+                                UPDATE allocations SET module_name=?, students=?,
+                                    module_start_date=?, actual_start_date=?,
+                                    is_admission_open=?, updated_at=datetime('now')
+                                WHERE id=?
+                                """,
+                                (source_values["module_name"], source_values["students"],
+                                 source_values["module_start_date"], source_values["actual_start_date"],
+                                 source_values["is_admission_open"], aid),
+                            )
                         conn.execute(
                             """
                             INSERT INTO allocation_import_baselines
