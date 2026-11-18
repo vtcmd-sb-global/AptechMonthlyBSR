@@ -519,7 +519,7 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = False, fo
     db_path = get_db_path()
     if db_path.exists() and db_path.stat().st_size:
         backup = db_path.with_name(
-            f"{db_path.stem}.pre-import-{datetime.now():%Y%m%d-%H%M%S}{db_path.suffix}"
+            f"{db_path.stem}.pre-import-{datetime.now():%Y%m%d-%H%M%S-%f}{db_path.suffix}"
         )
         shutil.copy2(db_path, backup)
 
