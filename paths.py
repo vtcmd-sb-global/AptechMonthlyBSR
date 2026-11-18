@@ -61,6 +61,11 @@ def find_source_workbook() -> Path | None:
 def get_template_candidates() -> list[Path]:
     names = ("GLS_Labstatus_template.xlsx", "21-August-2026 GLS Labstatus.xlsx")
     result = []
+    # The current source workbook is also the best master template because it
+    # carries the latest month sheet and the full historical workbook structure.
+    source = find_source_workbook()
+    if source:
+        result.append(source)
     for directory in (APP_ROOT / "templates", RESOURCE_ROOT / "templates", APP_ROOT / "data"):
         for name in names:
             path = directory / name
