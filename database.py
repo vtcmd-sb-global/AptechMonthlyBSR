@@ -25,6 +25,7 @@ _LEGACY_PATHS = [
     Path("/tmp") / "aptech_timetable.db",
     ROOT / "data" / "timetable.db",
     ROOT / "database" / "monthly_bsr.db",
+    ROOT / "database" / "lab_status.db",
     RESOURCE_ROOT / "database" / "monthly_bsr.db",
     RESOURCE_ROOT / "database" / "lab_status.db",
 ]
