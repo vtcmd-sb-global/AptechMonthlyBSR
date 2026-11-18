@@ -169,6 +169,28 @@ def _faculty_aliases(full_name: str) -> set[str]:
     return {a for a in aliases if a}
 
 
+def _resolve_faculty_initials(token: str, maps: dict) -> str:
+    """Resolve initials or a roster name; reject ordinary grid text."""
+    known = maps.get("faculty", {})
+    token_key = (token or "").strip().upper()
+    if token_key in known:
+        return token_key
+    normalized = _normalize_faculty_name(token)
+    resolved = maps.get("faculty_names", {}).get(normalized, "")
+    if resolved or len(normalized) < 4:
+        return resolved
+    scores = [
+        (SequenceMatcher(None, normalized, alias).ratio(), code)
+        for alias, code in maps.get("faculty_names", {}).items()
+    ]
+    scores.sort(reverse=True)
+    if scores and scores[0][0] >= 0.86:
+        tied = {code for score, code in scores if score == scores[0][0]}
+        if len(tied) == 1:
+            return scores[0][1]
+    return ""
+
+
 def _norm_career(text: str) -> str:
     t = _cell_str(text).upper().replace("  ", " ")
     return CAREER_ALIASES.get(t, t)
@@ -257,22 +279,7 @@ def parse_sheet_allocations(ws, year_month: str, maps: dict, conn) -> List[dict]
             faculty_token, _hint = _parse_faculty_line(fac_txt)
             if not faculty_token:
                 continue
-            token_key = faculty_token.upper()
-            normalized_token = _normalize_faculty_name(faculty_token)
-            if token_key in known_inits:
-                initials = token_key
-            else:
-                initials = maps.get("faculty_names", {}).get(normalized_token, "")
-                if not initials and len(normalized_token) >= 4:
-                    scores = [
-                        (SequenceMatcher(None, normalized_token, alias).ratio(), code)
-                        for alias, code in maps.get("faculty_names", {}).items()
-                    ]
-                    scores.sort(reverse=True)
-                    if scores and scores[0][0] >= 0.86:
-                        tied = [code for score, code in scores if score == scores[0][0]]
-                        if len(set(tied)) == 1:
-                            initials = scores[0][1]
+            initials = _resolve_faculty_initials(faculty_token, maps)
             if not initials:
                 continue
 
@@ -301,8 +308,9 @@ def parse_sheet_allocations(ws, year_month: str, maps: dict, conn) -> List[dict]
 
             careers_found = []
             for cr in range(career_start, career_start + 4):
-                # stop if we hit next faculty header
-                if _parse_faculty_line(grid.get((cr, start_c)))[0]:
+                # Stop only on a token that resolves to a rostered faculty member.
+                next_token, _next_hint = _parse_faculty_line(grid.get((cr, start_c)))
+                if next_token and _resolve_faculty_initials(next_token, maps):
                     break
                 cval = grid.get((cr, start_c))
                 if not _is_career(cval):
