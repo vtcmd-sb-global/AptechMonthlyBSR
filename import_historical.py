@@ -535,6 +535,16 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = False, fo
             conn.execute("DELETE FROM allocations")
             purge_bad_data(conn)
         seed_canonical_faculty(conn)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS allocation_import_baselines (
+                allocation_id INTEGER PRIMARY KEY REFERENCES allocations(id) ON DELETE CASCADE,
+                module_name TEXT,
+                students INTEGER,
+                module_start_date TEXT,
+                actual_start_date TEXT,
+                is_admission_open INTEGER NOT NULL DEFAULT 0
+            )
+        """)
 
         roster = []
         seen_names = set()
@@ -624,7 +634,9 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = False, fo
             for a in allocs:
                 existing_allocation = conn.execute(
                     """
-                    SELECT id FROM allocations
+                    SELECT id, module_name, students, module_start_date,
+                           actual_start_date, is_admission_open
+                    FROM allocations
                     WHERE report_month=? AND faculty_id=? AND career_id=?
                       AND lab_id=? AND time_slot_id=? AND day_group_id=?
                       AND COALESCE(batch_code, '')=COALESCE(?, '')
@@ -633,10 +645,61 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = False, fo
                     (ym, a["faculty_id"], a["career_id"], a["lab_id"],
                      a["time_slot_id"], a["day_group_id"], a.get("batch_code")),
                 ).fetchone()
+                source_values = {
+                    "module_name": a.get("module_name"),
+                    "students": a.get("students", 0),
+                    "module_start_date": a.get("module_start_date"),
+                    "actual_start_date": a.get("actual_start_date"),
+                    "is_admission_open": int(a.get("is_admission_open") or 0),
+                }
                 if existing_allocation:
                     summary["skipped_duplicates"] += 1
+                    aid = existing_allocation["id"]
+                    baseline = conn.execute(
+                        "SELECT module_name, students, module_start_date, actual_start_date, is_admission_open "
+                        "FROM allocation_import_baselines WHERE allocation_id=?",
+                        (aid,),
+                    ).fetchone()
+                    if baseline:
+                        fields_to_update = []
+                        values_to_update = []
+                        for field, source_value in source_values.items():
+                            if existing_allocation[field] == baseline[field]:
+                                fields_to_update.append(f"{field}=?")
+                                values_to_update.append(source_value)
+                        if fields_to_update:
+                            conn.execute(
+                                "UPDATE allocations SET " + ", ".join(fields_to_update) +
+                                ", updated_at=datetime('now') WHERE id=?",
+                                (*values_to_update, aid),
+                            )
+                        conn.execute(
+                            """
+                            UPDATE allocation_import_baselines
+                            SET module_name=?, students=?, module_start_date=?,
+                                actual_start_date=?, is_admission_open=?
+                            WHERE allocation_id=?
+                            """,
+                            (source_values["module_name"], source_values["students"],
+                             source_values["module_start_date"], source_values["actual_start_date"],
+                             source_values["is_admission_open"], aid),
+                        )
+                    else:
+                        # Existing records predate merge tracking. Preserve their
+                        # current values and establish the workbook as the baseline.
+                        conn.execute(
+                            """
+                            INSERT INTO allocation_import_baselines
+                            (allocation_id, module_name, students, module_start_date,
+                             actual_start_date, is_admission_open)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                            """,
+                            (aid, source_values["module_name"], source_values["students"],
+                             source_values["module_start_date"], source_values["actual_start_date"],
+                             source_values["is_admission_open"]),
+                        )
                     continue
-                conn.execute(
+                cur = conn.execute(
                     """
                     INSERT INTO allocations (
                         faculty_id, career_id, lab_id, time_slot_id, day_group_id,
@@ -652,6 +715,17 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = False, fo
                         a.get("module_start_date"), a.get("actual_start_date"),
                         a.get("notes"), int(a.get("is_admission_open") or 0), ym,
                     ),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO allocation_import_baselines
+                    (allocation_id, module_name, students, module_start_date,
+                     actual_start_date, is_admission_open)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (cur.lastrowid, source_values["module_name"], source_values["students"],
+                     source_values["module_start_date"], source_values["actual_start_date"],
+                     source_values["is_admission_open"]),
                 )
                 summary["inserted_allocations"] += 1
 
