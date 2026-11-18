@@ -98,8 +98,8 @@ Source: "templates\*"; DestDir: "{app}\templates"; Flags: ignoreversion recurses
 ; Ensure the Output folder exists (empty is fine)
 Source: "Output\*"; DestDir: "{app}\Output"; Flags: ignoreversion recursesubdirs createallsubdirs onlyifdoesntexist skipifsourcedoesntexist
 
-; Optional historical source workbook (used by import_historical on first run)
-Source: "data\21-August-2026 GLS Labstatus.xlsx"; DestDir: "{app}\data"; Flags: ignoreversion skipifsourcedoesntExist
+; Optional source BSR workbook(s); any .xlsx file in data is discovered automatically.
+Source: "data\*.xlsx"; DestDir: "{app}\data"; Flags: ignoreversion skipifsourcedoesntExist
 
 [Dirs]
 ; Guarantee these folders exist even if source was empty / missing
