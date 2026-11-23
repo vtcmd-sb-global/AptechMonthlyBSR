@@ -13,13 +13,13 @@ from typing import Any, Dict, List, Optional, Tuple
 from openpyxl import load_workbook
 
 from database import init_db, db_session
+from app_paths import USER_DATA_DIR, resource_path
 
-ROOT = Path(__file__).parent
 HIST_CANDIDATES = [
-    ROOT / "templates" / "21-August-2026 GLS Labstatus.xlsx",
-    ROOT / "templates" / "GLS_Labstatus_template.xlsx",
-    ROOT / "GLS_Labstatus_template.xlsx",
-    ROOT / "data" / "21-August-2026 GLS Labstatus.xlsx",
+    resource_path("templates", "21-August-2026 GLS Labstatus.xlsx"),
+    resource_path("templates", "GLS_Labstatus_template.xlsx"),
+    resource_path("GLS_Labstatus_template.xlsx"),
+    resource_path("data", "21-August-2026 GLS Labstatus.xlsx"),
     Path("/home/workdir/attachments/21-August-2026 GLS Labstatus.xlsx"),
     Path("/home/workdir/attachments/GLS_Labstatus_template.xlsx"),
 ]
@@ -718,7 +718,7 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = True) -> 
 
     # Keep the uploaded workbook as the next export's visual master. This
     # preserves the newest monthly sheet layout, merges, widths and styling.
-    imported_template = ROOT / "user_data" / "latest_imported_bsr.xlsx"
+    imported_template = USER_DATA_DIR / "latest_imported_bsr.xlsx"
     imported_template.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, imported_template)
 
