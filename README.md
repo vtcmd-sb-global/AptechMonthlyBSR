@@ -99,6 +99,7 @@ Automatic sync is triggered after:
 - Adding, editing, deactivating or deleting an allocation;
 - Clearing allocations;
 - Importing a workbook (each imported month is queued);
+- Generating a monthly BSR report;
 - Adding, editing, deactivating, reactivating or deleting faculty;
 - Adding, editing or deleting a career/course.
 
