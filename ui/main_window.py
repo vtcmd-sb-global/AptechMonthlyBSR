@@ -197,6 +197,12 @@ class AllocationForm(tk.Toplevel):
         super().__init__(master)
         self.allocation_id = allocation_id
         self.on_save = on_save
+        # New allocations inherit the month currently selected in the main window.
+        # Editing preserves the allocation's own month (loaded in _load).
+        self.report_month = (
+            master.bsr_month_var.get().strip()
+            if hasattr(master, "bsr_month_var") else datetime.now().strftime("%Y-%m")
+        )
         self.title("Edit Allocation" if allocation_id else "Add New Allocation")
         self.geometry("540x560")
         self.resizable(False, False)
@@ -407,6 +413,8 @@ class AllocationForm(tk.Toplevel):
         a = get_allocation(aid)
         if not a:
             return
+        if a.report_month:
+            self.report_month = a.report_month
         self.fac_var.set(f"{a.faculty_initials} – {a.faculty_name}")
         self.career_var.set(a.career_code)
         self.lab_var.set(f"{a.lab_code} ({a.lab_pcs} PCs)")
@@ -592,6 +600,7 @@ class AllocationForm(tk.Toplevel):
                 self.notes_txt.get("1.0", "end-1c").strip()
             ),
             "is_admission_open": is_adm_open,
+            "report_month": self.report_month,
         }
 
         try:
