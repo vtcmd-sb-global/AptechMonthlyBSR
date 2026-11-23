@@ -9,14 +9,14 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from database import init_db
-from models import list_available_report_months
+from models import list_allocations
 
 
 def ensure_historical_data():
-    """Import multi-month Excel once if fewer than 2 months of data exist."""
+    """Import bundled historical data only when the database has no allocations."""
     try:
-        months = list_available_report_months()
-        if len(months) >= 3:
+        # Never replace or re-import over records entered by an end user.
+        if list_allocations(active_only=False):
             return
         from import_historical import import_historical, HIST_CANDIDATES
         src = None
@@ -26,7 +26,7 @@ def ensure_historical_data():
                 break
         if src:
             print(f"Importing historical BSR data from {src.name}…")
-            summary = import_historical(src)
+            summary = import_historical(src, replace_all=False)
             print(f"Imported {summary['total_allocations']} allocations across {len(summary['months'])} months.")
     except Exception as e:
         print("Historical import skipped:", e)
