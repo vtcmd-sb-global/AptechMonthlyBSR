@@ -1962,13 +1962,15 @@ class MainApp(tk.Tk):
                 imported_months = sorted(summary["months"], reverse=True)
                 self.bsr_month_var.set(imported_months[0])
                 self.bsr_month_combo.configure(values=self._month_choices())
-                self.refresh()
+                # Rebuild the selected month's workbook and refresh the
+                # in-app preview immediately after a successful import.
+                self._after_allocation_saved()
                 messagebox.showinfo(
                     "Import complete",
                     f"Imported {summary['total_allocations']} allocation(s) "
                     f"across {len(imported_months)} month(s).\n\n"
-                    "The newest imported month is now selected. Generate the "
-                    "BSR to refresh the formatted Excel preview.",
+                    "The newest imported month is selected. Its formatted "
+                    "Excel preview is being refreshed.",
                     parent=self,
                 )
                 self.status.set(
