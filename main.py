@@ -4,7 +4,8 @@
 from pathlib import Path
 import sys
 
-ROOT = Path(__file__).parent
+from app_paths import RESOURCE_DIR, resource_path
+ROOT = RESOURCE_DIR
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -20,7 +21,7 @@ def ensure_historical_data():
             return
         from import_historical import import_historical, HIST_CANDIDATES
         src = None
-        for c in HIST_CANDIDATES + [ROOT / "data" / "21-August-2026 GLS Labstatus.xlsx"]:
+        for c in HIST_CANDIDATES + [resource_path("data", "21-August-2026 GLS Labstatus.xlsx")]:
             if c.exists():
                 src = c
                 break
