@@ -84,6 +84,7 @@ def sync_workbook_to_google_sheet(
             "action": "replaceSheetValues",
             "spreadsheetId": str(config["spreadsheet_id"]).strip(),
             "sheetId": int(str(config["sheet_id"]).strip()),
+            "sheetName": sheet_name,
             "token": str(config["token"]),
             "rowCount": ws.max_row or 1,
             "columnCount": ws.max_column or 1,
