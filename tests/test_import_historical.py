@@ -24,7 +24,7 @@ class BsrImportTests(unittest.TestCase):
             "labs": {"L1": 1},
             "slots": {"B": 1, "C": 2, "D": 3},
             "days": {"MWF": 1, "TTS": 2},
-            "careers": {"CPISM": 1},
+            "careers": {"CPISM": 1, "ADSE II": 2, "SEM I": 3},
         }
 
     def test_month_names_and_spelling_variant(self):
