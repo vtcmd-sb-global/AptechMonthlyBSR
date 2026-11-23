@@ -14,11 +14,9 @@ from pathlib import Path
 from datetime import datetime, date
 
 # Ensure project root on path
-ROOT = Path(__file__).parent.parent
+from app_paths import RESOURCE_DIR as ROOT, OUTPUT_DIR
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-OUTPUT_DIR = ROOT / "Output"
 
 from database import init_db
 from ui.excel_preview import ExcelPreviewPanel
@@ -1483,7 +1481,7 @@ class MainApp(tk.Tk):
                     (self.bsr_month_var.get() or datetime.now().strftime("%Y-%m")).strip(),
                 ) if month
             }
-            self._after_allocation_saved(sync_months=months)
+            self._after_allocation_saved(affected_months=months)
 
         AllocationForm(
             self,
