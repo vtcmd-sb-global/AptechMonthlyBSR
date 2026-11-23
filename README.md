@@ -15,13 +15,15 @@ Desktop application that replaces the manual multi-sheet Excel “GLS Labstatus�
 - Visiting faculty list
 - Lab capacity warnings
 - Schedule conflict detection (same lab + time + day group)
+- Import monthly BSR workbooks from the application (month-scoped replacement)
+- Add and edit individual allocation records without editing Excel manually
+- Automatically refresh the in-app Excel preview after allocation changes
 - One-click Excel report export that follows the **GLS Labstatus template** structure
 - Fully offline, single-file SQLite database
 
 ## Excel template fidelity
 
-The official workbook `templates/GLS_Labstatus_template.xlsx` (sheet **August-26**) is the visual master.
-`templates/14-August-2026 GLS Labstatus.xlsx` is a lightweight single-sheet copy of the same layout.
+The official workbook `templates/21-August-2026 GLS Labstatus.xlsx` is the visual master included in this repository. The root-level `GLS_Labstatus_template.xlsx` is also retained as a reference copy.
 
 Export behaviour:
 
@@ -36,6 +38,17 @@ Export behaviour:
 | **Lab Status** | Exact visual copy of the monthly GLS sheet, populated from live data |
 | **Dashboard** | Career summary, MWF/TTS totals, faculty workload, faculty × career matrix |
 | **Allocations** | Flat filterable list of every allocation |
+
+## Import, edit and preview workflow
+
+1. Choose **Import Excel** and select a monthly BSR workbook that follows the GLS Labstatus layout.
+2. The importer recognizes month names in worksheet titles (for example, `August-26`, `August 2026`, or `21-August-2026`).
+3. Confirm the import. Only allocation records for months present in the selected workbook are replaced; other months and lookup records are retained.
+4. Select a month, then use **Add Allocation** or **Edit Selected** to maintain records in the application.
+5. After an allocation is saved, the application regenerates the formatted workbook and refreshes the **Excel Preview** tab.
+6. Use **Generate Monthly BSR** when you want to create the final report file in `Output/`.
+
+The importer validates that it can read allocation rows before replacing a month's existing records. Keep a backup of `database/monthly_bsr.db` before importing important workbooks.
 
 ## Quick Start
 
