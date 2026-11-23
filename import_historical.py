@@ -14,8 +14,11 @@ from database import init_db, db_session
 
 ROOT = Path(__file__).parent
 HIST_CANDIDATES = [
-    Path("/home/workdir/attachments/21-August-2026 GLS Labstatus.xlsx"),
+    ROOT / "templates" / "21-August-2026 GLS Labstatus.xlsx",
+    ROOT / "templates" / "GLS_Labstatus_template.xlsx",
+    ROOT / "GLS_Labstatus_template.xlsx",
     ROOT / "data" / "21-August-2026 GLS Labstatus.xlsx",
+    Path("/home/workdir/attachments/21-August-2026 GLS Labstatus.xlsx"),
     Path("/home/workdir/attachments/GLS_Labstatus_template.xlsx"),
 ]
 
@@ -74,7 +77,7 @@ CAREER_ALIASES = {
 
 def sheet_to_year_month(name: str) -> Optional[str]:
     n = (name or "").strip().lower().replace(" ", "")
-    m = re.match(r"([a-z]+)-(\d{2})$", n)
+    m = re.search(r"([a-z]+)[\s_-]+(\d{2,4})(?:$|[^0-9])", n)
     if not m:
         return None
     mon = MONTH_NAME_TO_NUM.get(m.group(1))
@@ -518,9 +521,16 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = True) -> 
             if not ym:
                 continue
             ws = wb[sheet_name]
-            if replace_all:
-                conn.execute("DELETE FROM allocations WHERE report_month=?", (ym,))
+            # Parse and validate before replacing anything for this month. A
+            # renamed/unsupported or empty worksheet must never erase good data.
             allocs = parse_sheet_allocations(ws, ym, maps, conn)
+            if not allocs:
+                raise ValueError(
+                    f"No allocation records could be read from worksheet "
+                    f"{sheet_name!r}. Existing data has been preserved."
+                )
+            # Import is month-scoped: other months remain untouched.
+            conn.execute("DELETE FROM allocations WHERE report_month=?", (ym,))
             for a in allocs:
                 conn.execute(
                     """
