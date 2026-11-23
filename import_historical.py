@@ -402,7 +402,7 @@ def parse_sheet_allocations(ws, year_month: str, maps: dict, conn) -> List[dict]
             blank_career_rows = 0
             # Read the complete career list in this block. The old four-row
             # limit dropped additional programs from otherwise valid batches.
-            for cr in range(career_start, min(last_row + 1, career_start + 16)):
+            for cr in range(career_start, last_row + 1):
                 if _parse_faculty_line(_faculty_header_text(grid, cr, start_c))[0]:
                     break
                 cval = grid.get((cr, start_c))
