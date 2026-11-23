@@ -34,10 +34,10 @@ class PreviewSheetSelectionTests(unittest.TestCase):
         )
 
     def test_helper_tabs_are_not_selected_when_no_month_exists(self):
-        names = ["Dashboard Summary", "_Data", "Chart1", "Allocations", "BSR"]
+        names = ["Dashboard Summary", "_Data", "Chart1", "Allocations", "BSR", "Overview"]
         self.assertEqual(
             preferred_sheet_name(names, "uploaded-workbook.xlsx"),
-            "Dashboard Summary",
+            "Overview",
         )
 
 
