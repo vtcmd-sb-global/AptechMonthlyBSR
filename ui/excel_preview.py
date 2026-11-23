@@ -7,8 +7,8 @@ import tkinter as tk
 from tkinter import ttk
 from pathlib import Path
 from typing import Optional, Any, Dict, Tuple, List
-
 from openpyxl import load_workbook
+from ui.preview_utils import preferred_sheet_name
 from openpyxl.utils import get_column_letter
 from openpyxl.styles.colors import COLOR_INDEX
 
@@ -87,7 +87,7 @@ class ExcelPreviewPanel(ttk.Frame):
     """Tab content: sheet selector + scrollable Excel-like grid."""
 
     MAX_ROWS = 120
-    MAX_COLS = 30
+    MAX_COLS = 100
     MIN_COL_W = 40
     MAX_COL_W = 220
     DEFAULT_ROW_H = 22
@@ -200,13 +200,9 @@ class ExcelPreviewPanel(ttk.Frame):
             self._path = path
             names = list(self._wb.sheetnames)
             self.sheet_combo.configure(values=names)
-            # Prefer current month-looking sheet, else first non-helper
-            prefer = None
-            for n in names:
-                low = n.lower()
-                if low not in ("dashboard summary", "_data", "chart", "chart1"):
-                    prefer = n
-                    break
+            # Open the month represented by this generated report, not the
+            # first historical worksheet. Fall back to the newest month tab.
+            prefer = preferred_sheet_name(names, path)
             self.sheet_var.set(prefer or (names[0] if names else ""))
             self.path_lbl.configure(text=str(path.name))
             self._render_sheet()
