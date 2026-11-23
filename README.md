@@ -81,20 +81,55 @@ column widths, row heights and validations remain in Google Sheets.
    - the target worksheet's numeric `gid` as a fallback (the supplied link
      currently points to `1463201093`);
    - the same sync secret configured in Script Properties.
-6. Select the report month and click **Save & Sync**. The app generates the
-   selected month's workbook first, then sends that month's worksheet to the
-   bridge. The bridge first looks for a Google Sheets tab with the matching
-   month name (for example, `November-26`); if no matching tab exists, it
-   uses the configured `gid` fallback.
+6. Select the report month and click **Save & Sync** once. This saves the
+   connection settings and performs the first sync. The app generates the
+   selected month's workbook, then sends that worksheet to the bridge. The
+   bridge first looks for a Google Sheets tab with the matching month name
+   (for example, `November-26`); if no matching tab exists, it uses the
+   configured `gid` fallback.
+
+**Automatic synchronization after setup**
+
+After the first successful **Save & Sync**, synchronization runs automatically
+for subsequent application changes. The desktop application queues the affected
+report month(s), regenerates each formatted BSR workbook, and publishes the
+worksheet values through the Apps Script bridge in the background.
+
+Automatic sync is triggered after:
+- Adding, editing, deactivating or deleting an allocation;
+- Clearing allocations;
+- Importing a workbook (each imported month is queued);
+- Generating a monthly BSR report;
+- Adding, editing, deactivating, reactivating or deleting faculty;
+- Adding, editing or deleting a career/course.
+
+The application keeps local SQLite as the source of truth. Google Sheets is a
+reporting copy; edits made directly in Google Sheets are not imported back into
+the application.
+
+**Failure recovery and status**
+
+- A failed or offline sync does not undo or block a successful local database
+  change.
+- Pending report months are saved in
+  `user_data/google_sheets_sync_state.json` and survive application restarts.
+- The application retries failed synchronization while it remains open and
+  retries pending months again on the next launch.
+- The bottom status bar reports synchronization progress, pending months and
+  the time of the last successful sync.
+- Use **Google Sheets Sync** to configure the bridge, perform a manual sync of
+  the selected month, or retry a pending report.
 
 **Important:** sync replaces cell values on the selected month tab only. It
 does not change formatting, merged cells, column widths, row heights,
 validations or other tabs. The desktop app does not access or modify the
-institute's spreadsheet until an authorized user explicitly configures and
-invokes this feature.
+institute's spreadsheet until an authorized user configures the bridge.
+Keep the sync secret private. The desktop app stores its configuration locally
+in `user_data/google_sheets.json`; protect access to the Windows account and
+never commit either user-data file to GitHub.
 
-The bridge is an optional integration. Excel import, editing, preview and
-downloaded workbook generation continue to work without Google credentials.
+The bridge is optional. Excel import, editing, preview and downloaded workbook
+generation continue to work without Google credentials.
 
 ## Quick Start
 

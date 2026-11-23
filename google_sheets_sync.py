@@ -1,11 +1,13 @@
 """Optional Google Sheets sync through a user-deployed Apps Script web app.
 
 The desktop app never connects to or edits the spreadsheet until an operator
-configures the bridge and explicitly selects Google Sheets Sync.
+configures the bridge. After setup, changed report months are queued and synced
+automatically in the background.
 """
 from __future__ import annotations
 
 import json
+import threading
 import urllib.request
 from datetime import date, datetime
 from pathlib import Path
@@ -16,6 +18,84 @@ from openpyxl.cell.cell import MergedCell
 
 ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = ROOT / "user_data" / "google_sheets.json"
+
+SYNC_STATE_PATH = ROOT / "user_data" / "google_sheets_sync_state.json"
+_SYNC_STATE_LOCK = threading.RLock()
+
+
+def _load_sync_state() -> dict:
+    """Load the durable automatic-sync queue and last-sync metadata."""
+    if not SYNC_STATE_PATH.exists():
+        return {"pending_months": [], "last_success_at": None, "last_success_month": None, "last_error": None}
+    try:
+        state = json.loads(SYNC_STATE_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        state = {}
+    if not isinstance(state, dict):
+        state = {}
+    pending = state.get("pending_months", [])
+    if not isinstance(pending, list):
+        pending = []
+    return {
+        "pending_months": sorted({str(month) for month in pending if _valid_month(str(month))}),
+        "last_success_at": state.get("last_success_at"),
+        "last_success_month": state.get("last_success_month"),
+        "last_error": state.get("last_error"),
+    }
+
+
+def _valid_month(value: str) -> bool:
+    try:
+        datetime.strptime(value, "%Y-%m")
+        return len(value) == 7
+    except (TypeError, ValueError):
+        return False
+
+
+def _save_sync_state(state: dict) -> None:
+    SYNC_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = SYNC_STATE_PATH.with_suffix(".tmp")
+    temp_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    temp_path.replace(SYNC_STATE_PATH)
+
+
+def get_google_sheets_sync_state() -> dict:
+    """Return a safe copy of pending months and synchronization metadata."""
+    with _SYNC_STATE_LOCK:
+        return _load_sync_state()
+
+
+def queue_google_sheets_sync(months) -> list[str]:
+    """Persist months that need publishing; no-op until Sheets is configured."""
+    config = load_google_sheets_config()
+    required = ("web_app_url", "spreadsheet_id", "sheet_id", "token")
+    if any(not str(config.get(key, "")).strip() for key in required):
+        return []
+    with _SYNC_STATE_LOCK:
+        state = _load_sync_state()
+        valid = {str(month) for month in months if _valid_month(str(month))}
+        state["pending_months"] = sorted(set(state["pending_months"]) | valid)
+        state["last_error"] = None
+        _save_sync_state(state)
+        return state["pending_months"]
+
+
+def mark_google_sheets_month_synced(month: str) -> None:
+    with _SYNC_STATE_LOCK:
+        state = _load_sync_state()
+        state["pending_months"] = [item for item in state["pending_months"] if item != month]
+        state["last_success_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+        state["last_success_month"] = month
+        state["last_error"] = None
+        _save_sync_state(state)
+
+
+def record_google_sheets_sync_error(error: str) -> None:
+    with _SYNC_STATE_LOCK:
+        state = _load_sync_state()
+        state["last_error"] = str(error)
+        _save_sync_state(state)
+
 
 
 def load_google_sheets_config() -> dict:
