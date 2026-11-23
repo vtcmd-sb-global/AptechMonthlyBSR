@@ -281,10 +281,14 @@ class ExcelPreviewPanel(ttk.Frame):
 
     def _on_sheet_changed(self, _e=None):
         selected = self.sheet_var.get()
-        for label, sheet in getattr(self, "_month_sheet_map", {}).items():
-            if sheet == selected:
-                self.month_var.set(label)
-                break
+        matching_month = next(
+            (
+                label for label, sheet in getattr(self, "_month_sheet_map", {}).items()
+                if sheet == selected
+            ),
+            "",
+        )
+        self.month_var.set(matching_month)
         self._render_sheet()
 
     def _clear_grid(self):
