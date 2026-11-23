@@ -61,8 +61,16 @@ CANONICAL_FACULTY = [
     ("MAK", "MAK", "V"),
     ("MT", "MT", "V"),
     ("AD", "AD", "V"),
+    # The latest workbook lists both Hadiqa and Hasnain Arif as "H".
+    # Keep Hadiqa on H and use this existing distinct roster code for Hasnain.
+    ("HA", "Hasnain Arif", "V"),
     ("U", "U", "V"),
 ]
+
+FACULTY_NAME_ALIASES = {
+    "hasnain": "HA",
+    "hasnain arif": "HA",
+}
 
 KNOWN_CAREERS = {
     "CPISM", "DISM", "HDSE I", "HDSE II", "ADSE I", "ADSE II",
@@ -600,8 +608,11 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = True) -> 
         maps = {
             "faculty": {r["initials"].upper(): r["id"] for r in faculty_rows},
             "faculty_names": {
-                _normalise_person_name(r["full_name"]): r["initials"].upper()
-                for r in faculty_rows if _normalise_person_name(r["full_name"])
+                **{
+                    _normalise_person_name(r["full_name"]): r["initials"].upper()
+                    for r in faculty_rows if _normalise_person_name(r["full_name"])
+                },
+                **FACULTY_NAME_ALIASES,
             },
             "labs": {r[0].upper(): r[1] for r in conn.execute("SELECT lab_code, id FROM labs").fetchall()},
             "careers": {r[0].upper(): r[1] for r in conn.execute("SELECT code, id FROM careers").fetchall()},
