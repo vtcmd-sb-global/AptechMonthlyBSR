@@ -1,16 +1,17 @@
 """Optional Google Sheets sync through a user-deployed Apps Script web app.
 
 The desktop app never connects to or edits the spreadsheet until an operator
-configures the bridge and explicitly selects Google Sheets Sync.
+configures the bridge. After setup, changed report months are queued and synced
+automatically in the background.
 """
 from __future__ import annotations
 
 import json
+import threading
 import urllib.request
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
-import threading
 
 from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
@@ -29,6 +30,8 @@ def _load_sync_state() -> dict:
     try:
         state = json.loads(SYNC_STATE_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
+        state = {}
+    if not isinstance(state, dict):
         state = {}
     pending = state.get("pending_months", [])
     if not isinstance(pending, list):
