@@ -4,7 +4,7 @@
 from pathlib import Path
 import sys
 
-from app_paths import RESOURCE_DIR, resource_path
+from app_paths import RESOURCE_DIR, resource_path, migrate_legacy_user_files
 ROOT = RESOURCE_DIR
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -34,6 +34,7 @@ def ensure_historical_data():
 
 
 def main():
+    migrate_legacy_user_files()
     init_db()
     ensure_historical_data()
     from ui.main_window import main as ui_main
