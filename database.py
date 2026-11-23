@@ -6,22 +6,22 @@ Aptech Monthly BSR - Database layer
 from __future__ import annotations
 
 import sqlite3
-import sys
 from pathlib import Path
 from contextlib import contextmanager
 from typing import Iterator
 
-from app_paths import APP_DATA_DIR, RESOURCE_DIR, is_frozen
+from app_paths import APP_DATA_DIR, RESOURCE_DIR, legacy_roots
 
 # Keep writable data outside the installation directory and PyInstaller bundle.
 DB_DIR = APP_DATA_DIR / "database"
 DB_PATH = DB_DIR / "monthly_bsr.db"
 
 # One-time migration candidates from earlier source-folder installations.
-_OLD_ROOT = Path(sys.executable).resolve().parent if is_frozen() else RESOURCE_DIR
 _LEGACY_PATHS = [
-    _OLD_ROOT / "database" / "monthly_bsr.db",
-    _OLD_ROOT / "database" / "lab_status.db",
+    root / "database" / filename
+    for root in legacy_roots()
+    for filename in ("monthly_bsr.db", "lab_status.db")
+] + [
     Path("/tmp") / "aptech_timetable.db",
     RESOURCE_DIR / "data" / "timetable.db",
 ]
