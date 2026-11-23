@@ -87,7 +87,7 @@ class GoogleSheetsConfigDialog(tk.Toplevel):
         fields = [
             ("Apps Script Web App URL", "web_app_url", False),
             ("Spreadsheet ID", "spreadsheet_id", False),
-            ("Worksheet ID (gid)", "sheet_id", False),
+            ("Fallback Worksheet ID (gid)", "sheet_id", False),
             ("Sync secret", "token", True),
         ]
         for row, (label, key, secret) in enumerate(fields, start=1):
@@ -98,7 +98,9 @@ class GoogleSheetsConfigDialog(tk.Toplevel):
         ttk.Label(
             frame,
             text="The Apps Script bridge must be deployed and configured first. "
-                 "Sync replaces values on the selected tab but retains its formatting.",
+                 "It looks for a tab named for the selected month, then uses the "
+                 "fallback worksheet ID if no matching month tab exists. "
+                 "Sync replaces values but retains formatting.",
             wraplength=570,
             foreground="#64748b",
         ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(8, 12))
