@@ -39,6 +39,10 @@ from models import (
 from database import get_db_path
 from calculations import full_dashboard, faculty_workload, career_summary, day_group_totals
 from export_excel import export_workbook
+from google_sheets_sync import (
+    load_google_sheets_config, save_google_sheets_config,
+    sync_workbook_to_google_sheet,
+)
 
 # Optional calendar widget
 try:
@@ -48,6 +52,72 @@ except Exception:
     HAS_CALENDAR = False
     DateEntry = None  # type: ignore
 
+
+
+class GoogleSheetsConfigDialog(tk.Toplevel):
+    """Configure the optional Apps Script bridge and explicitly start a sync."""
+
+    def __init__(self, master, config=None, on_sync=None):
+        super().__init__(master)
+        self.title("Google Sheets Sync")
+        self.geometry("620x310")
+        self.resizable(False, False)
+        self.transient(master)
+        self.grab_set()
+        self.on_sync = on_sync
+        config = config or {}
+
+        defaults = {
+            "web_app_url": "",
+            "spreadsheet_id": "1T8sPu5d7ntMNqv79N3rCiM2fJCyC1qYK94eU0RY8Bs8",
+            "sheet_id": "1463201093",
+            "token": "",
+        }
+        defaults.update(config)
+        self.vars = {key: tk.StringVar(value=str(value)) for key, value in defaults.items()}
+
+        frame = ttk.Frame(self, padding=16)
+        frame.pack(fill=tk.BOTH, expand=True)
+        ttk.Label(
+            frame,
+            text="Connect the BSR to your Google Sheet",
+            font=("Segoe UI", 12, "bold"),
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+
+        fields = [
+            ("Apps Script Web App URL", "web_app_url", False),
+            ("Spreadsheet ID", "spreadsheet_id", False),
+            ("Worksheet ID (gid)", "sheet_id", False),
+            ("Sync secret", "token", True),
+        ]
+        for row, (label, key, secret) in enumerate(fields, start=1):
+            ttk.Label(frame, text=label).grid(row=row, column=0, sticky="w", padx=(0, 12), pady=5)
+            entry = ttk.Entry(frame, textvariable=self.vars[key], width=64, show="*" if secret else "")
+            entry.grid(row=row, column=1, sticky="ew", pady=5)
+
+        ttk.Label(
+            frame,
+            text="The Apps Script bridge must be deployed and configured first. "
+                 "Sync replaces values on the selected tab but retains its formatting.",
+            wraplength=570,
+            foreground="#64748b",
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(8, 12))
+
+        buttons = ttk.Frame(frame)
+        buttons.grid(row=6, column=0, columnspan=2, sticky="e")
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side=tk.RIGHT, padx=(6, 0))
+        ttk.Button(buttons, text="Save & Sync", style="Primary.TButton", command=self._save).pack(side=tk.RIGHT)
+
+    def _save(self):
+        config = {key: var.get().strip() for key, var in self.vars.items()}
+        try:
+            save_google_sheets_config(config)
+        except Exception as exc:
+            messagebox.showerror("Google Sheets settings", str(exc), parent=self)
+            return
+        self.destroy()
+        if self.on_sync:
+            self.on_sync(config)
 
 
 class ModuleDialog(tk.Toplevel):
@@ -1134,6 +1204,7 @@ class MainApp(tk.Tk):
 
         ttk.Button(top, text="Refresh", command=self.refresh).pack(side=tk.LEFT, padx=4)
         ttk.Button(top, text="Import Excel", command=self._import_excel).pack(side=tk.LEFT, padx=4)
+        ttk.Button(top, text="Google Sheets Sync", command=self._google_sheets_sync).pack(side=tk.LEFT, padx=4)
 
         ttk.Button(top, text="＋ Add Allocation", command=self._add).pack(side=tk.RIGHT, padx=4)
         ttk.Button(top, text="Edit Selected", command=self._edit).pack(side=tk.RIGHT, padx=4)
@@ -1917,6 +1988,61 @@ class MainApp(tk.Tk):
             self.progress.pack_forget()
         except Exception:
             pass
+
+    def _google_sheets_sync(self):
+        """Open settings, then sync the selected month after explicit confirmation."""
+        GoogleSheetsConfigDialog(
+            self,
+            config=load_google_sheets_config(),
+            on_sync=self._start_google_sheets_sync,
+        )
+
+    def _start_google_sheets_sync(self, config: dict):
+        if getattr(self, "_google_syncing", False):
+            return
+        year_month = (self.bsr_month_var.get() or datetime.now().strftime("%Y-%m")).strip()
+        sheet_name = datetime.strptime(year_month, "%Y-%m").strftime("%B-%y")
+        self._google_syncing = True
+        self.status.set(f"Preparing {year_month} for Google Sheets sync…")
+
+        def worker():
+            output = None
+            result = None
+            error = None
+            try:
+                output = export_workbook(
+                    OUTPUT_DIR / f"BSR_{year_month}.xlsx",
+                    year_month=year_month,
+                )
+                result = sync_workbook_to_google_sheet(output, sheet_name, config)
+            except Exception as exc:
+                error = exc
+
+            def done():
+                self._google_syncing = False
+                if error:
+                    self.status.set("Google Sheets sync failed")
+                    messagebox.showerror("Google Sheets sync failed", str(error), parent=self)
+                    return
+                try:
+                    self.excel_preview.load_file(output)
+                    self.refresh()
+                except Exception:
+                    pass
+                self.status.set(
+                    f"Google Sheet updated: {result.get('cells_written', 0)} cells "
+                    f"({sheet_name})"
+                )
+                messagebox.showinfo(
+                    "Google Sheets sync complete",
+                    f"{result.get('message', 'Google Sheet updated.')}\n"
+                    f"Cells written: {result.get('cells_written', 0)}",
+                    parent=self,
+                )
+
+            self.after(0, done)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _import_excel(self):
         """Import selected monthly BSR sheets without disturbing other months."""
