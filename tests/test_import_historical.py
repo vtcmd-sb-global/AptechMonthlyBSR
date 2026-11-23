@@ -3,6 +3,7 @@ from datetime import datetime
 from openpyxl import Workbook
 
 from import_historical import (
+    _faculty_header_text,
     _parse_faculty_line,
     _resolve_faculty_initials,
     parse_sheet_allocations,
@@ -37,6 +38,12 @@ class BsrImportTests(unittest.TestCase):
         self.assertEqual(_resolve_faculty_initials("Moiz", self.maps), "HM")
         self.assertEqual(_resolve_faculty_initials("A.Wahab", self.maps), "AW")
         self.assertEqual(_resolve_faculty_initials("Amaan", self.maps), "AA")
+
+    def test_split_faculty_header_is_reassembled_from_block_cells(self):
+        grid = {(18, 30): "(AI)", (18, 33): "Aousaja"}
+        combined = _faculty_header_text(grid, 18, 30)
+        self.assertEqual(combined, "(AI) Aousaja")
+        self.assertEqual(_parse_faculty_line(combined), ("AOUSAJA", "AI"))
 
     def test_imports_faculty_allocation_and_admission_open_slot(self):
         wb = Workbook()
