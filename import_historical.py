@@ -269,17 +269,20 @@ def _is_batch_code(text) -> bool:
 
 
 def extract_faculty_from_sheet(ws) -> List[Tuple[str, str, str]]:
-    """Read the faculty roster wherever it appears in the worksheet."""
+    """Read the faculty roster wherever it appears, ignoring formatting-only rows."""
     found = []
+    populated = [cell for cell in ws._cells.values() if cell.value is not None]
+    if not populated:
+        return found
+    last_row = max(cell.row for cell in populated)
     header_row = None
-    for r in range(1, (ws.max_row or 1) + 1):
-        v = ws.cell(r, 2).value
-        if v and str(v).strip().upper() == "INITIAL":
-            header_row = r
+    for cell in populated:
+        if cell.column == 2 and str(cell.value).strip().upper() == "INITIAL":
+            header_row = cell.row
             break
     if not header_row:
         return found
-    for r in range(header_row + 1, min((ws.max_row or header_row) + 1, header_row + 100)):
+    for r in range(header_row + 1, min(last_row + 1, header_row + 100)):
         init = ws.cell(r, 2).value
         status = ws.cell(r, 4).value
         name = ws.cell(r, 5).value
@@ -299,16 +302,15 @@ def extract_faculty_from_sheet(ws) -> List[Tuple[str, str, str]]:
 
 
 def load_grid(ws, max_r=None, max_c=None) -> Dict[Tuple[int, int], Any]:
-    """Load all populated cells; do not truncate imported workbooks at 100x75."""
+    """Load every populated cell without scanning Excel's formatting-only extent."""
     grid = {}
-    max_r = max_r or (ws.max_row or 1)
-    max_c = max_c or (ws.max_column or 1)
-    for r_idx, row in enumerate(
-        ws.iter_rows(min_row=1, max_row=max_r, max_col=max_c, values_only=True), 1
-    ):
-        for c_idx, value in enumerate(row, 1):
-            if value not in (None, ""):
-                grid[(r_idx, c_idx)] = value
+    for cell in ws._cells.values():
+        if cell.value not in (None, ""):
+            if max_r is not None and cell.row > max_r:
+                continue
+            if max_c is not None and cell.column > max_c:
+                continue
+            grid[(cell.row, cell.column)] = cell.value
     return grid
 
 
@@ -492,13 +494,13 @@ def parse_sheet_metrics(ws, year_month: str) -> dict:
         "tts_batches": 0, "tts_students": 0,
         "report_path": None, "notes": "imported from historical Excel",
     }
-    rows = list(ws.iter_rows(
-        min_row=min(55, ws.max_row or 55),
-        max_row=ws.max_row or 100,
-        max_col=ws.max_column or 75,
-        values_only=True,
-    ))
-    for row in rows:
+    grid = load_grid(ws)
+    populated_rows = [r for r, _c in grid]
+    populated_cols = [c for _r, c in grid]
+    last_row = max(populated_rows, default=55)
+    last_col = max(populated_cols, default=75)
+    for row_idx in range(min(55, last_row), last_row + 1):
+        row = [grid.get((row_idx, col)) for col in range(1, last_col + 1)]
         for c, v in enumerate(row):
             if v is None:
                 continue
