@@ -56,13 +56,20 @@ CANONICAL_FACULTY = [
     ("AR", "AR", "V"),
     ("SAA", "SAA", "V"),
     ("AM", "AM", "V"),
-    ("HA", "HA", "V"),
     ("MA", "MA", "V"),
     ("MAK", "MAK", "V"),
     ("MT", "MT", "V"),
     ("AD", "AD", "V"),
+    # The latest workbook lists both Hadiqa and Hasnain Arif as "H".
+    # Keep Hadiqa on H and use this existing distinct roster code for Hasnain.
+    ("HA", "Hasnain Arif", "V"),
     ("U", "U", "V"),
 ]
+
+FACULTY_NAME_ALIASES = {
+    "hasnain": "HA",
+    "hasnain arif": "HA",
+}
 
 KNOWN_CAREERS = {
     "CPISM", "DISM", "HDSE I", "HDSE II", "ADSE I", "ADSE II",
@@ -268,9 +275,14 @@ def load_grid(ws, max_r=100, max_c=75) -> Dict[Tuple[int, int], Any]:
 
 
 def _faculty_header_text(grid: dict, row: int, start_col: int) -> str:
-    """Join a faculty header split across merged-cell anchors in its 6-col block."""
+    """Join split header cells without reading into the adjacent schedule block."""
+    # Most BSR blocks are six columns wide, but the D-slot MWF block is only
+    # four columns wide: its TTS neighbour starts at column 30. Derive each
+    # block's true right edge from the next configured block start.
+    next_starts = [col for col in SLOT_DAY_COLS.values() if col > start_col]
+    end_col = min(next_starts) - 1 if next_starts else start_col + 5
     parts = []
-    for col in range(start_col, start_col + 6):
+    for col in range(start_col, end_col + 1):
         value = grid.get((row, col))
         text = _cell_str(value)
         if text:
@@ -595,8 +607,11 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = True) -> 
         maps = {
             "faculty": {r["initials"].upper(): r["id"] for r in faculty_rows},
             "faculty_names": {
-                _normalise_person_name(r["full_name"]): r["initials"].upper()
-                for r in faculty_rows if _normalise_person_name(r["full_name"])
+                **{
+                    _normalise_person_name(r["full_name"]): r["initials"].upper()
+                    for r in faculty_rows if _normalise_person_name(r["full_name"])
+                },
+                **FACULTY_NAME_ALIASES,
             },
             "labs": {r[0].upper(): r[1] for r in conn.execute("SELECT lab_code, id FROM labs").fetchall()},
             "careers": {r[0].upper(): r[1] for r in conn.execute("SELECT code, id FROM careers").fetchall()},

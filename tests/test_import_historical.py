@@ -14,17 +14,19 @@ from import_historical import (
 class BsrImportTests(unittest.TestCase):
     def setUp(self):
         self.maps = {
-            "faculty": {"T": 10, "AA": 11, "HM": 12, "AW": 13},
+            "faculty": {"T": 10, "AA": 11, "HM": 12, "AW": 13, "HA": 14},
             "faculty_names": {
                 "talha qureshi": "T",
                 "aman ali": "AA",
                 "hafiz moiz": "HM",
                 "abdul wahab": "AW",
+                "hasnain": "HA",
+                "hasnain arif": "HA",
             },
             "labs": {"L1": 1},
-            "slots": {"B": 1, "C": 2},
-            "days": {"MWF": 1},
-            "careers": {"CPISM": 1},
+            "slots": {"B": 1, "C": 2, "D": 3},
+            "days": {"MWF": 1, "TTS": 2},
+            "careers": {"CPISM": 1, "ADSE II": 2, "SEM I": 3},
         }
 
     def test_month_names_and_spelling_variant(self):
@@ -38,12 +40,54 @@ class BsrImportTests(unittest.TestCase):
         self.assertEqual(_resolve_faculty_initials("Moiz", self.maps), "HM")
         self.assertEqual(_resolve_faculty_initials("A.Wahab", self.maps), "AW")
         self.assertEqual(_resolve_faculty_initials("Amaan", self.maps), "AA")
+        self.assertEqual(_resolve_faculty_initials("Hasnain", self.maps), "HA")
+        self.assertEqual(_resolve_faculty_initials("Hasnain Arif", self.maps), "HA")
 
     def test_split_faculty_header_is_reassembled_from_block_cells(self):
         grid = {(18, 30): "(AI)", (18, 33): "Aousaja"}
         combined = _faculty_header_text(grid, 18, 30)
         self.assertEqual(combined, "(AI) Aousaja")
         self.assertEqual(_parse_faculty_line(combined), ("AOUSAJA", "AI"))
+
+    def test_adjacent_d_slot_headers_stay_inside_their_own_blocks(self):
+        grid = {
+            (4, 26): "(PMTZ) Amaan",
+            (4, 30): "(CDMA) Amaan",
+        }
+        mwf_header = _faculty_header_text(grid, 4, 26)
+        tts_header = _faculty_header_text(grid, 4, 30)
+
+        self.assertEqual(mwf_header, "(PMTZ) Amaan")
+        self.assertEqual(tts_header, "(CDMA) Amaan")
+        self.assertEqual(_parse_faculty_line(mwf_header), ("AMAAN", "PMTZ"))
+        self.assertEqual(_parse_faculty_line(tts_header), ("AMAAN", "CDMA"))
+
+    def test_imports_adjacent_d_slot_allocations_without_crossing_headers(self):
+        wb = Workbook()
+        ws = wb.active
+        ws["A6"] = "L1"
+
+        # D-slot MWF occupies columns 26-29; D-slot TTS starts at 30.
+        ws.cell(4, 26, "(PMTZ) Amaan")
+        ws.cell(5, 26, "PMTZ-202405B")
+        ws.cell(6, 26, "FBD")
+        ws.cell(7, 26, datetime(2024, 5, 4))
+        ws.cell(8, 26, "ADSE II")
+        ws.cell(8, 29, 4)
+
+        ws.cell(4, 30, "(CDMA) Amaan")
+        ws.cell(5, 30, "DM-202609D")
+        ws.cell(6, 30, "SEO")
+        ws.cell(7, 30, datetime(2026, 9, 8))
+        ws.cell(8, 30, "SEM I")
+        ws.cell(8, 34, 3)
+
+        rows = parse_sheet_allocations(ws, "2026-11", self.maps, None)
+        d_rows = [x for x in rows if x["time_slot_id"] == 3]
+        self.assertEqual(len(d_rows), 2)
+        self.assertEqual({x["day_group_id"] for x in d_rows}, {1, 2})
+        self.assertEqual({x["career_code"] for x in d_rows}, {"ADSE II", "SEM I"})
+        self.assertEqual({x["students"] for x in d_rows}, {3, 4})
 
     def test_imports_faculty_allocation_and_admission_open_slot(self):
         wb = Workbook()
