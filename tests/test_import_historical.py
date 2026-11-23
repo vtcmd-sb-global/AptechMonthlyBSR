@@ -14,12 +14,14 @@ from import_historical import (
 class BsrImportTests(unittest.TestCase):
     def setUp(self):
         self.maps = {
-            "faculty": {"T": 10, "AA": 11, "HM": 12, "AW": 13},
+            "faculty": {"T": 10, "AA": 11, "HM": 12, "AW": 13, "HA": 14},
             "faculty_names": {
                 "talha qureshi": "T",
                 "aman ali": "AA",
                 "hafiz moiz": "HM",
                 "abdul wahab": "AW",
+                "hasnain": "HA",
+                "hasnain arif": "HA",
             },
             "labs": {"L1": 1},
             "slots": {"B": 1, "C": 2, "D": 3},
@@ -38,6 +40,8 @@ class BsrImportTests(unittest.TestCase):
         self.assertEqual(_resolve_faculty_initials("Moiz", self.maps), "HM")
         self.assertEqual(_resolve_faculty_initials("A.Wahab", self.maps), "AW")
         self.assertEqual(_resolve_faculty_initials("Amaan", self.maps), "AA")
+        self.assertEqual(_resolve_faculty_initials("Hasnain", self.maps), "HA")
+        self.assertEqual(_resolve_faculty_initials("Hasnain Arif", self.maps), "HA")
 
     def test_split_faculty_header_is_reassembled_from_block_cells(self):
         grid = {(18, 30): "(AI)", (18, 33): "Aousaja"}
