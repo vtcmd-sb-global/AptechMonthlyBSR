@@ -268,9 +268,14 @@ def load_grid(ws, max_r=100, max_c=75) -> Dict[Tuple[int, int], Any]:
 
 
 def _faculty_header_text(grid: dict, row: int, start_col: int) -> str:
-    """Join a faculty header split across merged-cell anchors in its 6-col block."""
+    """Join split header cells without reading into the adjacent schedule block."""
+    # Most BSR blocks are six columns wide, but the D-slot MWF block is only
+    # four columns wide: its TTS neighbour starts at column 30. Derive each
+    # block's true right edge from the next configured block start.
+    next_starts = [col for col in SLOT_DAY_COLS.values() if col > start_col]
+    end_col = min(next_starts) - 1 if next_starts else start_col + 5
     parts = []
-    for col in range(start_col, start_col + 6):
+    for col in range(start_col, end_col + 1):
         value = grid.get((row, col))
         text = _cell_str(value)
         if text:
