@@ -14,11 +14,9 @@ from pathlib import Path
 from datetime import datetime, date
 
 # Ensure project root on path
-ROOT = Path(__file__).parent.parent
+from app_paths import RESOURCE_DIR as ROOT, OUTPUT_DIR
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-OUTPUT_DIR = ROOT / "Output"
 
 from database import init_db
 from ui.excel_preview import ExcelPreviewPanel
@@ -39,13 +37,6 @@ from models import (
 from database import get_db_path
 from calculations import full_dashboard, faculty_workload, career_summary, day_group_totals
 from export_excel import export_workbook
-from google_sheets_sync import (
-    load_google_sheets_config, save_google_sheets_config,
-    sync_workbook_to_google_sheet, queue_google_sheets_sync,
-    get_google_sheets_sync_state, mark_google_sheets_month_synced,
-    record_google_sheets_sync_error,
-)
-
 # Optional calendar widget
 try:
     from tkcalendar import DateEntry  # type: ignore
@@ -54,74 +45,6 @@ except Exception:
     HAS_CALENDAR = False
     DateEntry = None  # type: ignore
 
-
-
-class GoogleSheetsConfigDialog(tk.Toplevel):
-    """Configure the optional Apps Script bridge and explicitly start a sync."""
-
-    def __init__(self, master, config=None, on_sync=None):
-        super().__init__(master)
-        self.title("Google Sheets Sync")
-        self.geometry("620x310")
-        self.resizable(False, False)
-        self.transient(master)
-        self.grab_set()
-        self.on_sync = on_sync
-        config = config or {}
-
-        defaults = {
-            "web_app_url": "",
-            "spreadsheet_id": "1T8sPu5d7ntMNqv79N3rCiM2fJCyC1qYK94eU0RY8Bs8",
-            "sheet_id": "1463201093",
-            "token": "",
-        }
-        defaults.update(config)
-        self.vars = {key: tk.StringVar(value=str(value)) for key, value in defaults.items()}
-
-        frame = ttk.Frame(self, padding=16)
-        frame.pack(fill=tk.BOTH, expand=True)
-        ttk.Label(
-            frame,
-            text="Connect the BSR to your Google Sheet",
-            font=("Segoe UI", 12, "bold"),
-        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
-
-        fields = [
-            ("Apps Script Web App URL", "web_app_url", False),
-            ("Spreadsheet ID", "spreadsheet_id", False),
-            ("Fallback Worksheet ID (gid)", "sheet_id", False),
-            ("Sync secret", "token", True),
-        ]
-        for row, (label, key, secret) in enumerate(fields, start=1):
-            ttk.Label(frame, text=label).grid(row=row, column=0, sticky="w", padx=(0, 12), pady=5)
-            entry = ttk.Entry(frame, textvariable=self.vars[key], width=64, show="*" if secret else "")
-            entry.grid(row=row, column=1, sticky="ew", pady=5)
-
-        ttk.Label(
-            frame,
-            text="The Apps Script bridge must be deployed and configured first. "
-                 "It looks for a tab named for the selected month, then uses the "
-                 "fallback worksheet ID if no matching month tab exists. "
-                 "Sync replaces values but retains formatting.",
-            wraplength=570,
-            foreground="#64748b",
-        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(8, 12))
-
-        buttons = ttk.Frame(frame)
-        buttons.grid(row=6, column=0, columnspan=2, sticky="e")
-        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side=tk.RIGHT, padx=(6, 0))
-        ttk.Button(buttons, text="Save & Sync", style="Primary.TButton", command=self._save).pack(side=tk.RIGHT)
-
-    def _save(self):
-        config = {key: var.get().strip() for key, var in self.vars.items()}
-        try:
-            save_google_sheets_config(config)
-        except Exception as exc:
-            messagebox.showerror("Google Sheets settings", str(exc), parent=self)
-            return
-        self.destroy()
-        if self.on_sync:
-            self.on_sync(config)
 
 
 class ModuleDialog(tk.Toplevel):
@@ -1158,9 +1081,6 @@ class MainApp(tk.Tk):
                 self.focus_force()
             except Exception:
                 pass
-        # Retry any months left pending by a previous offline/failed session.
-        self.after(1500, self._start_pending_google_sheets_sync)
-
     def _build_ui(self):
         # ── Dark header ──
         header = tk.Frame(self, bg=COLORS["header"], height=68)
@@ -1210,7 +1130,6 @@ class MainApp(tk.Tk):
 
         ttk.Button(top, text="Refresh", command=self.refresh).pack(side=tk.LEFT, padx=4)
         ttk.Button(top, text="Import Excel", command=self._import_excel).pack(side=tk.LEFT, padx=4)
-        ttk.Button(top, text="Google Sheets Sync", command=self._google_sheets_sync).pack(side=tk.LEFT, padx=4)
 
         ttk.Button(top, text="＋ Add Allocation", command=self._add).pack(side=tk.RIGHT, padx=4)
         ttk.Button(top, text="Edit Selected", command=self._edit).pack(side=tk.RIGHT, padx=4)
@@ -1562,7 +1481,7 @@ class MainApp(tk.Tk):
                     (self.bsr_month_var.get() or datetime.now().strftime("%Y-%m")).strip(),
                 ) if month
             }
-            self._after_allocation_saved(sync_months=months)
+            self._after_allocation_saved(affected_months=months)
 
         AllocationForm(
             self,
@@ -1571,12 +1490,10 @@ class MainApp(tk.Tk):
             on_save=after_save,
         )
 
-    def _after_allocation_saved(self, sync_months=None):
-        """Refresh the preview and queue changed month reports for background sync."""
+    def _after_allocation_saved(self, affected_months=None):
+        """Refresh application views and the selected month's Excel preview."""
         self.refresh()
         year_month = (self.bsr_month_var.get() or datetime.now().strftime("%Y-%m")).strip()
-        months_to_sync = list(sync_months or [year_month])
-        queue_google_sheets_sync(months_to_sync)
         if getattr(self, "_preview_refreshing", False):
             return
         self._preview_refreshing = True
@@ -1595,105 +1512,20 @@ class MainApp(tk.Tk):
                 self._preview_refreshing = False
                 if err:
                     self.status.set(f"Record saved; Excel preview refresh failed: {err}")
-                    self._start_pending_google_sheets_sync()
                     return
                 try:
                     self.excel_preview.load_file(out)
                     self.status.set(f"Record saved; Excel preview refreshed for {year_month}")
                 except Exception as exc:
                     self.status.set(f"Record saved; preview could not be displayed: {exc}")
-                self._start_pending_google_sheets_sync()
 
             self.after(0, done)
 
         threading.Thread(target=worker, daemon=True).start()
 
     def _after_lookup_saved(self):
-        """Refresh lookup-dependent reports and publish every known report month."""
+        """Refresh reports after faculty, career or other lookup changes."""
         self.refresh()
-        queue_google_sheets_sync(list_available_report_months())
-        self._start_pending_google_sheets_sync()
-
-    def _start_pending_google_sheets_sync(self, show_dialog=False):
-        """Drain the durable month queue without blocking the Tkinter interface."""
-        if getattr(self, "_google_syncing", False):
-            return
-        # Preview and export both write BSR_YYYY-MM.xlsx; serialize those jobs.
-        if getattr(self, "_preview_refreshing", False) or getattr(self, "_exporting", False):
-            self.after(500, self._start_pending_google_sheets_sync)
-            return
-        config = load_google_sheets_config()
-        required = ("web_app_url", "spreadsheet_id", "sheet_id", "token")
-        if any(not str(config.get(key, "")).strip() for key in required):
-            return
-        pending = get_google_sheets_sync_state().get("pending_months", [])
-        if not pending:
-            return
-
-        self._google_syncing = True
-        self.status.set(f"Syncing {len(pending)} BSR month(s) to Google Sheets…")
-
-        def worker():
-            synced = []
-            error = None
-            failed_month = None
-            for month in pending:
-                sheet_name = datetime.strptime(month, "%Y-%m").strftime("%B-%y")
-                try:
-                    output = export_workbook(
-                        OUTPUT_DIR / f"BSR_{month}.xlsx",
-                        year_month=month,
-                    )
-                    result = sync_workbook_to_google_sheet(output, sheet_name, config)
-                    mark_google_sheets_month_synced(month)
-                    synced.append((month, result.get("cells_written", 0)))
-                except Exception as exc:
-                    failed_month = month
-                    error = str(exc)
-                    record_google_sheets_sync_error(error)
-                    break
-
-            def done():
-                self._google_syncing = False
-                state = get_google_sheets_sync_state()
-                if error:
-                    self.status.set(
-                        f"Google Sheets sync pending for {failed_month}; "
-                        f"{len(state.get('pending_months', []))} month(s) queued"
-                    )
-                    if show_dialog:
-                        messagebox.showerror(
-                            "Google Sheets sync pending",
-                            f"{failed_month} could not be synchronized.\n\n{error}\n\n"
-                            "Your local BSR data is safe. The application will retry automatically.",
-                            parent=self,
-                        )
-                    # Retry while the app remains open; pending months survive restarts too.
-                    self.after(60000, self._start_pending_google_sheets_sync)
-                    return
-
-                if synced:
-                    latest = synced[-1][0]
-                    synced_at = state.get("last_success_at")
-                    try:
-                        synced_time = datetime.fromisoformat(synced_at).astimezone().strftime("%I:%M %p")
-                    except (TypeError, ValueError):
-                        synced_time = "just now"
-                    self.status.set(
-                        f"Google Sheets updated: {len(synced)} month(s); latest {latest} at {synced_time}"
-                    )
-                    if show_dialog:
-                        messagebox.showinfo(
-                            "Google Sheets sync complete",
-                            f"Successfully updated {len(synced)} month(s).",
-                            parent=self,
-                        )
-                if state.get("pending_months"):
-                    self.after(250, self._start_pending_google_sheets_sync)
-
-            self.after(0, done)
-
-        threading.Thread(target=worker, daemon=True).start()
 
     def _deactivate(self):
         sel = self.tree.selection()
@@ -1716,7 +1548,7 @@ class MainApp(tk.Tk):
         ):
             delete_allocation(int(sel[0]))
             self._after_allocation_saved()
-            self.status.set("Allocation deleted; report sync queued")
+            self.status.set("Allocation deleted; report updated")
 
     def _clear_all(self):
         n = len(list_allocations(active_only=False))
@@ -1743,9 +1575,9 @@ class MainApp(tk.Tk):
             return
         affected_months = list_available_report_months()
         removed = clear_all_allocations()
-        self._after_allocation_saved(sync_months=affected_months)
+        self._after_allocation_saved(affected_months=affected_months)
         messagebox.showinfo("Cleared", f"Removed {removed} allocation(s).\nYou can now add fresh data.")
-        self.status.set(f"Cleared {removed} allocation(s) — report sync queued")
+        self.status.set(f"Cleared {removed} allocation(s) — report refreshed")
 
 
 
@@ -1961,7 +1793,7 @@ class MainApp(tk.Tk):
         try:
             delete_career(cid)
             self._after_lookup_saved()
-            self.status.set("Career deleted; report sync queued.")
+            self.status.set("Career deleted; report refreshed.")
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
@@ -1998,7 +1830,7 @@ class MainApp(tk.Tk):
         if messagebox.askyesno("Deactivate Faculty", msg):
             set_faculty_active(fid, False)
             self._after_lookup_saved()
-            self.status.set(f"Deactivated faculty {fac.initials}; report sync queued")
+            self.status.set(f"Deactivated faculty {fac.initials}; report refreshed")
 
     def _reactivate_faculty(self):
         sel = self.fac_tree.selection()
@@ -2014,7 +1846,7 @@ class MainApp(tk.Tk):
             return
         set_faculty_active(fid, True)
         self._after_lookup_saved()
-        self.status.set(f"Reactivated faculty {fac.initials}; report sync queued")
+        self.status.set(f"Reactivated faculty {fac.initials}; report refreshed")
 
     def _delete_faculty(self):
         sel = self.fac_tree.selection()
@@ -2045,7 +1877,7 @@ class MainApp(tk.Tk):
             messagebox.showwarning("Cannot delete", msg)
             return
         self._after_lookup_saved()
-        self.status.set(f"Deleted faculty {fac.initials}; report sync queued")
+        self.status.set(f"Deleted faculty {fac.initials}; report refreshed")
 
     def _set_export_progress(self, pct: int, message: str = ""):
         """Update determinate progress bars and labels (0–100). Safe from worker thread via after()."""
@@ -2102,20 +1934,6 @@ class MainApp(tk.Tk):
         except Exception:
             pass
 
-    def _google_sheets_sync(self):
-        """Open settings, then sync the selected month after explicit confirmation."""
-        GoogleSheetsConfigDialog(
-            self,
-            config=load_google_sheets_config(),
-            on_sync=self._start_google_sheets_sync,
-        )
-
-    def _start_google_sheets_sync(self, config: dict):
-        """Manual Sync Now: queue the selected month and drain the same auto-sync queue."""
-        year_month = (self.bsr_month_var.get() or datetime.now().strftime("%Y-%m")).strip()
-        queue_google_sheets_sync([year_month])
-        self._start_pending_google_sheets_sync(show_dialog=True)
-
     def _import_excel(self):
         """Import selected monthly BSR sheets without disturbing other months."""
         path = filedialog.askopenfilename(
@@ -2160,8 +1978,8 @@ class MainApp(tk.Tk):
                 imported_months = sorted(summary["months"], reverse=True)
                 self.bsr_month_var.set(imported_months[0])
                 self.bsr_month_combo.configure(values=self._month_choices())
-                # Refresh the selected preview and queue every imported month.
-                self._after_allocation_saved(sync_months=imported_months)
+                # Refresh the selected month's in-app preview.
+                self._after_allocation_saved(affected_months=imported_months)
                 messagebox.showinfo(
                     "Import complete",
                     f"Imported {summary['total_allocations']} allocation(s) "
@@ -2253,9 +2071,6 @@ class MainApp(tk.Tk):
                 )
                 self.status.set(f"BSR {year_month} → {out}")
                 self.refresh()
-                # Generating a report is also an explicit request to publish it.
-                queue_google_sheets_sync([year_month])
-                self._start_pending_google_sheets_sync()
 
             self.after(0, done)
 

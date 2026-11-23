@@ -46,90 +46,35 @@ Export behaviour:
 3. Confirm the import. Only allocation records for months present in the selected workbook are replaced; other months and lookup records are retained.
 4. Select a month, then use **Add Allocation** or **Edit Selected** to maintain records in the application.
 5. After an allocation is saved, the application regenerates the formatted workbook and refreshes the **Excel Preview** tab.
-6. Use **Generate Monthly BSR** when you want to create the final report file in `Output/`.
+6. Use **Generate Monthly BSR** when you want to create the final report file in `%LOCALAPPDATA%\\AptechMonthlyBSR\\Output`.
 
-The importer validates that it can read allocation rows before replacing a month's existing records. Keep a backup of `database/monthly_bsr.db` before importing important workbooks.
+The importer validates that it can read allocation rows before replacing a month's existing records. Keep a backup of `%LOCALAPPDATA%\\AptechMonthlyBSR\\database\\monthly_bsr.db` before importing important workbooks.
 
 The current workbook contains two different faculty members with the initial `H`
 (Hadiqa and Hasnain Arif). To avoid merging their allocations, the importer
 keeps Hadiqa as `H` and maps Hasnain Arif to the separate `HA` roster entry.
 
-## Google Sheets synchronization (optional)
+## Standalone application and local data
 
-The desktop application can update an existing Google Sheets BSR tab without
-rebuilding its formatting. It sends the generated worksheet's cell values to a
-small Google Apps Script bridge. The bridge clears **values only** and writes
-the updated values into the existing tab; cell formatting, merged ranges,
-column widths, row heights and validations remain in Google Sheets.
+The desktop application is the complete BSR system. External spreadsheet
+synchronization is discontinued and is not required. The application does not
+need a Google account or internet connection for normal operation.
 
-### One-time setup
+- **SQLite is the only source of truth.** Allocation, faculty, career, module,
+  lab, time-slot and reporting data is maintained by the application.
+- Add, edit, deactivate and delete records inside the application.
+- The dashboard and Excel preview are generated from the local database.
+- Import an existing Excel BSR workbook to bring historical data into the app.
+  After migration, maintain records in the application.
+- Export a formatted monthly BSR workbook whenever an Excel copy is required.
+- Application data is stored separately from the executable under
+  `%LOCALAPPDATA%\\AptechMonthlyBSR`.
+- Back up `%LOCALAPPDATA%\\AptechMonthlyBSR\\database\\monthly_bsr.db`
+  regularly. Generated Excel reports are stored in
+  `%LOCALAPPDATA%\\AptechMonthlyBSR\\Output`.
 
-1. Open the institute's Google spreadsheet using an account authorized to edit it.
-2. Open **Extensions → Apps Script** and paste the contents of
-   `google_apps_script/Code.gs` into the script editor.
-3. In **Project Settings → Script Properties**, add both properties:
-   - `BSR_SYNC_TOKEN`: a long, randomly generated secret;
-   - `BSR_SPREADSHEET_ID`: `1T8sPu5d7ntMNqv79N3rCiM2fJCyC1qYK94eU0RY8Bs8`.
-   Keep the token private and do not commit it to GitHub.
-4. Deploy the script as a **Web app**, executing as the spreadsheet owner.
-   Prefer restricting access to your institute's Google Workspace domain where
-   available. If the deployment requires public access, the secret is still
-   required for every write request; protect the deployment URL and secret.
-5. In the desktop application, choose **Google Sheets Sync** and enter:
-   - the deployed Web App URL;
-   - the spreadsheet ID from its URL;
-   - the target worksheet's numeric `gid` as a fallback (the supplied link
-     currently points to `1463201093`);
-   - the same sync secret configured in Script Properties.
-6. Select the report month and click **Save & Sync** once. This saves the
-   connection settings and performs the first sync. The app generates the
-   selected month's workbook, then sends that worksheet to the bridge. The
-   bridge first looks for a Google Sheets tab with the matching month name
-   (for example, `November-26`); if no matching tab exists, it uses the
-   configured `gid` fallback.
-
-**Automatic synchronization after setup**
-
-After the first successful **Save & Sync**, synchronization runs automatically
-for subsequent application changes. The desktop application queues the affected
-report month(s), regenerates each formatted BSR workbook, and publishes the
-worksheet values through the Apps Script bridge in the background.
-
-Automatic sync is triggered after:
-- Adding, editing, deactivating or deleting an allocation;
-- Clearing allocations;
-- Importing a workbook (each imported month is queued);
-- Generating a monthly BSR report;
-- Adding, editing, deactivating, reactivating or deleting faculty;
-- Adding, editing or deleting a career/course.
-
-The application keeps local SQLite as the source of truth. Google Sheets is a
-reporting copy; edits made directly in Google Sheets are not imported back into
-the application.
-
-**Failure recovery and status**
-
-- A failed or offline sync does not undo or block a successful local database
-  change.
-- Pending report months are saved in
-  `user_data/google_sheets_sync_state.json` and survive application restarts.
-- The application retries failed synchronization while it remains open and
-  retries pending months again on the next launch.
-- The bottom status bar reports synchronization progress, pending months and
-  the time of the last successful sync.
-- Use **Google Sheets Sync** to configure the bridge, perform a manual sync of
-  the selected month, or retry a pending report.
-
-**Important:** sync replaces cell values on the selected month tab only. It
-does not change formatting, merged cells, column widths, row heights,
-validations or other tabs. The desktop app does not access or modify the
-institute's spreadsheet until an authorized user configures the bridge.
-Keep the sync secret private. The desktop app stores its configuration locally
-in `user_data/google_sheets.json`; protect access to the Windows account and
-never commit either user-data file to GitHub.
-
-The bridge is optional. Excel import, editing, preview and downloaded workbook
-generation continue to work without Google credentials.
+Excel is an import/export format only. It is not the live database and no
+external spreadsheet is synchronized.
 
 ## Quick Start
 
@@ -148,42 +93,73 @@ python main.py
 
 ## Project layout
 
-```
-Aptech_LabTimetable/
-├── main.py                 # Entry point
-├── database.py             # SQLite layer (path → database/lab_status.db)
-├── models.py               # CRUD including faculty management
-├── calculations.py         # All aggregates & reports
-├── export_excel.py         # Template-aligned Excel exporter
-├── seed_sample_data.py     # Optional demo data
+~~~~
+AptechMonthlyBSR/
+├── main.py                  # Application entry point
+├── app_paths.py             # Bundled-resource and user-data paths
+├── database.py              # SQLite database layer
+├── models.py                # Data access and CRUD operations
+├── calculations.py          # Dashboard and report calculations
+├── export_excel.py          # Template-aligned Excel exporter
+├── import_historical.py     # Excel import
 ├── ui/
-│   └── main_window.py      # Tkinter GUI (Allocations / Dashboard / Faculty)
-├── templates/              # Master Excel templates (do not edit casually)
-├── database/
-│   └── lab_status.db       # Persistent SQLite file – backup this
-├── Output/                 # Generated Lab Status Excel reports only
+│   ├── main_window.py       # Tkinter desktop interface
+│   ├── excel_preview.py     # In-app workbook preview
+│   └── splash.py
+├── templates/               # Bundled master Excel templates
+├── tests/                   # Regression tests
+├── AptechMonthlyBSR.spec    # PyInstaller build definition
+├── build_windows.bat        # Windows build script
 ├── requirements.txt
 └── README.md
-```
+~~~~
+
+Runtime data is stored separately under `%LOCALAPPDATA%\\AptechMonthlyBSR`:
+SQLite database, imported master workbook, and generated Excel reports. These
+files are not stored in or overwritten by the executable bundle.
 
 ### Database backup / restore
-- The live database is a normal file: `database/monthly_bsr.db`
-- **Backup:** copy that file somewhere safe
-- **Restore:** stop the app, replace `database/monthly_bsr.db` with your backup, start again
-- Startup never wipes an existing database; lookup seeds run only on empty tables
+- Live database: `%LOCALAPPDATA%\\AptechMonthlyBSR\\database\\monthly_bsr.db`
+- **Backup:** close the application and copy the database file to a safe location.
+- **Restore:** close the application and replace the database file with your backup.
+- Startup never wipes an existing database; lookup seeds run only on empty tables.
+- Existing database and report files in the earlier project-folder layout are
+  copied into the new data folder on first launch when possible.
 
 ### Faculty management
 Use the **Faculty** tab to Add / Edit / Deactivate / Reactivate / Delete teachers.
 Inactive teachers stay in history but are hidden from new allocation dropdowns.
 Prefer **Deactivate** over Delete when the teacher has past allocations.
 
-## Building a Windows .exe
+## Building the Windows application
+
+Build on a Windows machine (the build is not cross-platform). Install Python
+3.11 or newer, then run:
 
 ```bat
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-pyinstaller --noconfirm --windowed --name AptechTimetable main.py
+build_windows.bat
+```
+
+The script installs project dependencies and builds an **on-directory**
+application with PyInstaller. The distributable application is created at:
+
+```
+dist\\AptechMonthlyBSR\\AptechMonthlyBSR.exe
+```
+
+Distribute the complete `dist\\AptechMonthlyBSR` folder (not the EXE by
+itself). Zip that folder for convenient delivery. The master Excel template is
+bundled with the application. User data and generated reports remain outside
+the installation folder, so updating the application does not overwrite them.
+On first launch, the app also copies an existing database, imported master
+workbook, and generated reports from the earlier project-folder layout when
+those files are present; it does not overwrite files already in the new location.
+
+For a manual build:
+
+```bat
+python -m pip install -r requirements.txt
+python -m PyInstaller --clean --noconfirm AptechMonthlyBSR.spec
 ```
 
 ## Notes on the template

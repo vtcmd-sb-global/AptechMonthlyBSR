@@ -32,16 +32,14 @@ from models import (
     derive_course_from_batch,
 )
 from calculations import full_dashboard
+from app_paths import USER_DATA_DIR, OUTPUT_DIR, resource_path
 
 
-ROOT = Path(__file__).parent
 TEMPLATE_CANDIDATES = [
-    # Prefer the most recently imported workbook so newly added months and
-    # their exact layout/formatting remain the export master.
-    ROOT / "user_data" / "latest_imported_bsr.xlsx",
-    ROOT / "templates" / "21-August-2026 GLS Labstatus.xlsx",
-    ROOT / "templates" / "GLS_Labstatus_template.xlsx",
-    ROOT / "data" / "21-August-2026 GLS Labstatus.xlsx",
+    USER_DATA_DIR / "latest_imported_bsr.xlsx",
+    resource_path("templates", "21-August-2026 GLS Labstatus.xlsx"),
+    resource_path("templates", "GLS_Labstatus_template.xlsx"),
+    resource_path("data", "21-August-2026 GLS Labstatus.xlsx"),
 ]
 
 # Day-group column starts (1-based); each block is 6 columns wide
@@ -282,7 +280,7 @@ def export_workbook(
         year_month = datetime.now().strftime("%Y-%m")
 
     if output_path is None:
-        output_path = ROOT / "Output" / f"BSR_{year_month}.xlsx"
+        output_path = OUTPUT_DIR / f"BSR_{year_month}.xlsx"
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
