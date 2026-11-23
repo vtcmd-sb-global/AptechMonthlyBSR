@@ -50,6 +50,10 @@ Export behaviour:
 
 The importer validates that it can read allocation rows before replacing a month's existing records. Keep a backup of `database/monthly_bsr.db` before importing important workbooks.
 
+The current workbook contains two different faculty members with the initial `H`
+(Hadiqa and Hasnain Arif). To avoid merging their allocations, the importer
+keeps Hadiqa as `H` and maps Hasnain Arif to the separate `HA` roster entry.
+
 ## Google Sheets synchronization (optional)
 
 The desktop application can update an existing Google Sheets BSR tab without
