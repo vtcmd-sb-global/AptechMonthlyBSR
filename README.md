@@ -50,6 +50,45 @@ Export behaviour:
 
 The importer validates that it can read allocation rows before replacing a month's existing records. Keep a backup of `database/monthly_bsr.db` before importing important workbooks.
 
+## Google Sheets synchronization (optional)
+
+The desktop application can update an existing Google Sheets BSR tab without
+rebuilding its formatting. It sends the generated worksheet's cell values to a
+small Google Apps Script bridge. The bridge clears **values only** and writes
+the updated values into the existing tab; cell formatting, merged ranges,
+column widths, row heights and validations remain in Google Sheets.
+
+### One-time setup
+
+1. Open the institute's Google spreadsheet using an account authorized to edit it.
+2. Open **Extensions → Apps Script** and paste the contents of
+   `google_apps_script/Code.gs` into the script editor.
+3. In **Project Settings → Script Properties**, add
+   `BSR_SYNC_TOKEN` with a long, randomly generated secret. Keep this secret
+   private and do not commit it to GitHub.
+4. Deploy the script as a **Web app**, executing as the spreadsheet owner.
+   Prefer restricting access to your institute's Google Workspace domain where
+   available. If the deployment requires public access, the secret is still
+   required for every write request; protect the deployment URL and secret.
+5. In the desktop application, choose **Google Sheets Sync** and enter:
+   - the deployed Web App URL;
+   - the spreadsheet ID from its URL;
+   - the target worksheet's numeric `gid` (the supplied link currently points
+     to `1463201093`);
+   - the same sync secret configured in Script Properties.
+6. Select the report month and click **Save & Sync**. The app generates the
+   selected month's workbook first, then sends that sheet to the configured
+   Google Sheets tab.
+
+**Important:** this replaces the cell contents of the configured worksheet
+with the selected month's generated BSR. It does not change formatting or
+other tabs. Configure the correct `gid` for the intended month before syncing.
+The desktop app does not access or modify the institute's spreadsheet until an
+authorized user explicitly configures and invokes this feature.
+
+The bridge is an optional integration. Excel import, editing, preview and
+downloaded workbook generation continue to work without Google credentials.
+
 ## Quick Start
 
 ```bash
