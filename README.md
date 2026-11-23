@@ -63,9 +63,10 @@ column widths, row heights and validations remain in Google Sheets.
 1. Open the institute's Google spreadsheet using an account authorized to edit it.
 2. Open **Extensions → Apps Script** and paste the contents of
    `google_apps_script/Code.gs` into the script editor.
-3. In **Project Settings → Script Properties**, add
-   `BSR_SYNC_TOKEN` with a long, randomly generated secret. Keep this secret
-   private and do not commit it to GitHub.
+3. In **Project Settings → Script Properties**, add both properties:
+   - `BSR_SYNC_TOKEN`: a long, randomly generated secret;
+   - `BSR_SPREADSHEET_ID`: `1T8sPu5d7ntMNqv79N3rCiM2fJCyC1qYK94eU0RY8Bs8`.
+   Keep the token private and do not commit it to GitHub.
 4. Deploy the script as a **Web app**, executing as the spreadsheet owner.
    Prefer restricting access to your institute's Google Workspace domain where
    available. If the deployment requires public access, the secret is still
@@ -73,18 +74,20 @@ column widths, row heights and validations remain in Google Sheets.
 5. In the desktop application, choose **Google Sheets Sync** and enter:
    - the deployed Web App URL;
    - the spreadsheet ID from its URL;
-   - the target worksheet's numeric `gid` (the supplied link currently points
-     to `1463201093`);
+   - the target worksheet's numeric `gid` as a fallback (the supplied link
+     currently points to `1463201093`);
    - the same sync secret configured in Script Properties.
 6. Select the report month and click **Save & Sync**. The app generates the
-   selected month's workbook first, then sends that sheet to the configured
-   Google Sheets tab.
+   selected month's workbook first, then sends that month's worksheet to the
+   bridge. The bridge first looks for a Google Sheets tab with the matching
+   month name (for example, `November-26`); if no matching tab exists, it
+   uses the configured `gid` fallback.
 
-**Important:** this replaces the cell contents of the configured worksheet
-with the selected month's generated BSR. It does not change formatting or
-other tabs. Configure the correct `gid` for the intended month before syncing.
-The desktop app does not access or modify the institute's spreadsheet until an
-authorized user explicitly configures and invokes this feature.
+**Important:** sync replaces cell values on the selected month tab only. It
+does not change formatting, merged cells, column widths, row heights,
+validations or other tabs. The desktop app does not access or modify the
+institute's spreadsheet until an authorized user explicitly configures and
+invokes this feature.
 
 The bridge is an optional integration. Excel import, editing, preview and
 downloaded workbook generation continue to work without Google credentials.
