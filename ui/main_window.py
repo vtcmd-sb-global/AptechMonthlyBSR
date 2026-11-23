@@ -1549,11 +1549,26 @@ class MainApp(tk.Tk):
         if not sel:
             messagebox.showinfo("Select", "Please select an allocation first.")
             return
+        allocation_id = int(sel[0])
+        before = get_allocation(allocation_id)
+        old_month = before.report_month if before else None
+
+        def after_save():
+            updated = get_allocation(allocation_id)
+            months = {
+                month for month in (
+                    old_month,
+                    updated.report_month if updated else None,
+                    (self.bsr_month_var.get() or datetime.now().strftime("%Y-%m")).strip(),
+                ) if month
+            }
+            self._after_allocation_saved(sync_months=months)
+
         AllocationForm(
             self,
-            allocation_id=int(sel[0]),
+            allocation_id=allocation_id,
             report_month=(self.bsr_month_var.get() or datetime.now().strftime("%Y-%m")),
-            on_save=self._after_allocation_saved,
+            on_save=after_save,
         )
 
     def _after_allocation_saved(self, sync_months=None):
@@ -1655,8 +1670,13 @@ class MainApp(tk.Tk):
 
                 if synced:
                     latest = synced[-1][0]
+                    synced_at = state.get("last_success_at")
+                    try:
+                        synced_time = datetime.fromisoformat(synced_at).astimezone().strftime("%I:%M %p")
+                    except (TypeError, ValueError):
+                        synced_time = "just now"
                     self.status.set(
-                        f"Google Sheets updated: {len(synced)} month(s); latest {latest}"
+                        f"Google Sheets updated: {len(synced)} month(s); latest {latest} at {synced_time}"
                     )
                     if show_dialog:
                         messagebox.showinfo(
