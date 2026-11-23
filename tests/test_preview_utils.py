@@ -33,6 +33,13 @@ class PreviewSheetSelectionTests(unittest.TestCase):
             "Feburary-26",
         )
 
+    def test_abbreviated_and_iso_month_tabs_are_supported(self):
+        names = ["Aug-26", "2026-09", "Nov-26", "Chart1"]
+        self.assertEqual(
+            preferred_sheet_name(names, "uploaded-workbook.xlsx"),
+            "Nov-26",
+        )
+
     def test_helper_tabs_are_not_selected_when_no_month_exists(self):
         names = ["Dashboard Summary", "_Data", "Chart1", "Allocations", "BSR", "Overview"]
         self.assertEqual(
