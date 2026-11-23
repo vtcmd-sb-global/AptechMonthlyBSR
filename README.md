@@ -46,9 +46,9 @@ Export behaviour:
 3. Confirm the import. Only allocation records for months present in the selected workbook are replaced; other months and lookup records are retained.
 4. Select a month, then use **Add Allocation** or **Edit Selected** to maintain records in the application.
 5. After an allocation is saved, the application regenerates the formatted workbook and refreshes the **Excel Preview** tab.
-6. Use **Generate Monthly BSR** when you want to create the final report file in `%LOCALAPPDATA%\\AptechMonthlyBSR\\Output`.
+6. Use **Generate Monthly BSR** when you want to create the final report file in `%LOCALAPPDATA%\AptechMonthlyBSR\Output`.
 
-The importer validates that it can read allocation rows before replacing a month's existing records. Keep a backup of `%LOCALAPPDATA%\\AptechMonthlyBSR\\database\\monthly_bsr.db` before importing important workbooks.
+The importer validates that it can read allocation rows before replacing a month's existing records. Keep a backup of `%LOCALAPPDATA%\AptechMonthlyBSR\database\monthly_bsr.db` before importing important workbooks.
 
 The current workbook contains two different faculty members with the initial `H`
 (Hadiqa and Hasnain Arif). To avoid merging their allocations, the importer
@@ -68,10 +68,10 @@ need a Google account or internet connection for normal operation.
   After migration, maintain records in the application.
 - Export a formatted monthly BSR workbook whenever an Excel copy is required.
 - Application data is stored separately from the executable under
-  `%LOCALAPPDATA%\\AptechMonthlyBSR`.
-- Back up `%LOCALAPPDATA%\\AptechMonthlyBSR\\database\\monthly_bsr.db`
+  `%LOCALAPPDATA%\AptechMonthlyBSR`.
+- Back up `%LOCALAPPDATA%\AptechMonthlyBSR\database\monthly_bsr.db`
   regularly. Generated Excel reports are stored in
-  `%LOCALAPPDATA%\\AptechMonthlyBSR\\Output`.
+  `%LOCALAPPDATA%\AptechMonthlyBSR\Output`.
 
 Excel is an import/export format only. It is not the live database and no
 external spreadsheet is synchronized.
@@ -114,12 +114,12 @@ AptechMonthlyBSR/
 └── README.md
 ~~~~
 
-Runtime data is stored separately under `%LOCALAPPDATA%\\AptechMonthlyBSR`:
+Runtime data is stored separately under `%LOCALAPPDATA%\AptechMonthlyBSR`:
 SQLite database, imported master workbook, and generated Excel reports. These
 files are not stored in or overwritten by the executable bundle.
 
 ### Database backup / restore
-- Live database: `%LOCALAPPDATA%\\AptechMonthlyBSR\\database\\monthly_bsr.db`
+- Live database: `%LOCALAPPDATA%\AptechMonthlyBSR\database\monthly_bsr.db`
 - **Backup:** close the application and copy the database file to a safe location.
 - **Restore:** close the application and replace the database file with your backup.
 - Startup never wipes an existing database; lookup seeds run only on empty tables.
@@ -144,10 +144,10 @@ The script installs project dependencies and builds an **on-directory**
 application with PyInstaller. The distributable application is created at:
 
 ```
-dist\\AptechMonthlyBSR\\AptechMonthlyBSR.exe
+dist\AptechMonthlyBSR\AptechMonthlyBSR.exe
 ```
 
-Distribute the complete `dist\\AptechMonthlyBSR` folder (not the EXE by
+Distribute the complete `dist\AptechMonthlyBSR` folder (not the EXE by
 itself). Zip that folder for convenient delivery. The master Excel template is
 bundled with the application. User data and generated reports remain outside
 the installation folder, so updating the application does not overwrite them.
