@@ -193,10 +193,11 @@ class CareerDialog(tk.Toplevel):
 class AllocationForm(tk.Toplevel):
     """Modal form to add / edit a single allocation."""
 
-    def __init__(self, master, allocation_id=None, on_save=None):
+    def __init__(self, master, allocation_id=None, on_save=None, report_month=None):
         super().__init__(master)
         self.allocation_id = allocation_id
         self.on_save = on_save
+        self.report_month = report_month or datetime.now().strftime("%Y-%m")
         self.title("Edit Allocation" if allocation_id else "Add New Allocation")
         self.geometry("540x560")
         self.resizable(False, False)
@@ -407,6 +408,10 @@ class AllocationForm(tk.Toplevel):
         a = get_allocation(aid)
         if not a:
             return
+        # Preserve the record's original month when editing; legacy records
+        # without a month inherit the month currently selected in the UI.
+        if getattr(a, "report_month", None):
+            self.report_month = a.report_month
         self.fac_var.set(f"{a.faculty_initials} – {a.faculty_name}")
         self.career_var.set(a.career_code)
         self.lab_var.set(f"{a.lab_code} ({a.lab_pcs} PCs)")
@@ -592,6 +597,7 @@ class AllocationForm(tk.Toplevel):
                 self.notes_txt.get("1.0", "end-1c").strip()
             ),
             "is_admission_open": is_adm_open,
+            "report_month": self.report_month,
         }
 
         try:
@@ -1455,14 +1461,56 @@ class MainApp(tk.Tk):
         self.status.set(f"Showing {ym} only  ·  {len(allocs)} allocation(s)")
 
     def _add(self):
-        AllocationForm(self, on_save=self.refresh)
+        AllocationForm(
+            self,
+            report_month=(self.bsr_month_var.get() or datetime.now().strftime("%Y-%m")),
+            on_save=self._after_allocation_saved,
+        )
 
     def _edit(self):
         sel = self.tree.selection()
         if not sel:
             messagebox.showinfo("Select", "Please select an allocation first.")
             return
-        AllocationForm(self, allocation_id=int(sel[0]), on_save=self.refresh)
+        AllocationForm(
+            self,
+            allocation_id=int(sel[0]),
+            report_month=(self.bsr_month_var.get() or datetime.now().strftime("%Y-%m")),
+            on_save=self._after_allocation_saved,
+        )
+
+    def _after_allocation_saved(self):
+        """Refresh database views and regenerate the in-app Excel preview."""
+        self.refresh()
+        if getattr(self, "_preview_refreshing", False):
+            return
+        self._preview_refreshing = True
+        year_month = (self.bsr_month_var.get() or datetime.now().strftime("%Y-%m")).strip()
+        self.status.set(f"Updating Excel preview for {year_month}…")
+
+        def worker():
+            out = None
+            err = None
+            try:
+                OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+                out = export_workbook(OUTPUT_DIR / f"BSR_{year_month}.xlsx", year_month=year_month)
+            except Exception as exc:
+                err = exc
+
+            def done():
+                self._preview_refreshing = False
+                if err:
+                    self.status.set(f"Record saved; Excel preview refresh failed: {err}")
+                    return
+                try:
+                    self.excel_preview.load_file(out)
+                    self.status.set(f"Record saved; Excel preview refreshed for {year_month}")
+                except Exception as exc:
+                    self.status.set(f"Record saved; preview could not be displayed: {exc}")
+
+            self.after(0, done)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _deactivate(self):
         sel = self.tree.selection()
