@@ -2253,6 +2253,9 @@ class MainApp(tk.Tk):
                 )
                 self.status.set(f"BSR {year_month} → {out}")
                 self.refresh()
+                # Generating a report is also an explicit request to publish it.
+                queue_google_sheets_sync([year_month])
+                self._start_pending_google_sheets_sync()
 
             self.after(0, done)
 
