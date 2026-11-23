@@ -9,7 +9,7 @@ import os
 import sys
 import threading
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
 from datetime import datetime, date
 
@@ -1127,6 +1127,7 @@ class MainApp(tk.Tk):
         self.open_folder_btn.pack_forget()
 
         ttk.Button(top, text="Refresh", command=self.refresh).pack(side=tk.LEFT, padx=4)
+        ttk.Button(top, text="Import Excel", command=self._import_excel).pack(side=tk.LEFT, padx=4)
 
         ttk.Button(top, text="＋ Add Allocation", command=self._add).pack(side=tk.RIGHT, padx=4)
         ttk.Button(top, text="Edit Selected", command=self._edit).pack(side=tk.RIGHT, padx=4)
@@ -1868,6 +1869,68 @@ class MainApp(tk.Tk):
             self.progress.pack_forget()
         except Exception:
             pass
+
+    def _import_excel(self):
+        """Import selected monthly BSR sheets without disturbing other months."""
+        path = filedialog.askopenfilename(
+            parent=self,
+            title="Select a BSR Excel workbook",
+            filetypes=[("Excel workbooks", "*.xlsx *.xlsm"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+
+        if not messagebox.askyesno(
+            "Import BSR workbook",
+            "The selected workbook will replace allocation records only for "
+            "the month(s) found inside it. Other months and lookup records will "
+            "remain unchanged. Continue?",
+            parent=self,
+        ):
+            return
+
+        self.status.set("Importing BSR workbook…")
+
+        def worker():
+            summary = None
+            err = None
+            try:
+                from import_historical import import_historical
+                summary = import_historical(Path(path), replace_all=False)
+                if not summary.get("months") or not summary.get("total_allocations"):
+                    raise ValueError(
+                        "No supported monthly BSR allocation records were found. "
+                        "Check that the workbook contains month-named worksheets "
+                        "and follows the GLS Labstatus layout."
+                    )
+            except Exception as exc:
+                err = exc
+
+            def done():
+                if err:
+                    self.status.set("Excel import failed")
+                    messagebox.showerror("Excel import failed", str(err), parent=self)
+                    return
+                imported_months = sorted(summary["months"], reverse=True)
+                self.bsr_month_var.set(imported_months[0])
+                self.bsr_month_combo.configure(values=self._month_choices())
+                self.refresh()
+                messagebox.showinfo(
+                    "Import complete",
+                    f"Imported {summary['total_allocations']} allocation(s) "
+                    f"across {len(imported_months)} month(s).\n\n"
+                    "The newest imported month is now selected. Generate the "
+                    "BSR to refresh the formatted Excel preview.",
+                    parent=self,
+                )
+                self.status.set(
+                    f"Imported {summary['total_allocations']} allocation(s) "
+                    f"from {Path(path).name}"
+                )
+
+            self.after(0, done)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _export(self):
         if self._exporting:
