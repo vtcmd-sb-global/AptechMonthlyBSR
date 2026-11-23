@@ -362,8 +362,8 @@ def parse_sheet_allocations(ws, year_month: str, maps: dict, conn) -> List[dict]
                 _resolve_faculty_initials(displayed_name, maps)
                 if displayed_name else None
             )
-            if not admission_header and not initials:
-                continue
+            # Keep unresolved display names too: ensure_faculty() will add
+            # them to the local roster instead of silently dropping the block.
 
             # Block rows relative to faculty row
             batch_r, mod_r, date_r = r + 1, r + 2, r + 3
