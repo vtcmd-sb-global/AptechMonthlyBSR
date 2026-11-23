@@ -1,0 +1,7 @@
+# Local application data and generated files
+user_data/
+Output/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
