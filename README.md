@@ -46,9 +46,9 @@ Export behaviour:
 3. Confirm the import. Only allocation records for months present in the selected workbook are replaced; other months and lookup records are retained.
 4. Select a month, then use **Add Allocation** or **Edit Selected** to maintain records in the application.
 5. After an allocation is saved, the application regenerates the formatted workbook and refreshes the **Excel Preview** tab.
-6. Use **Generate Monthly BSR** when you want to create the final report file in `Output/`.
+6. Use **Generate Monthly BSR** when you want to create the final report file in `%LOCALAPPDATA%\\AptechMonthlyBSR\\Output`.
 
-The importer validates that it can read allocation rows before replacing a month's existing records. Keep a backup of `database/monthly_bsr.db` before importing important workbooks.
+The importer validates that it can read allocation rows before replacing a month's existing records. Keep a backup of `%LOCALAPPDATA%\\AptechMonthlyBSR\\database\\monthly_bsr.db` before importing important workbooks.
 
 The current workbook contains two different faculty members with the initial `H`
 (Hadiqa and Hasnain Arif). To avoid merging their allocations, the importer
