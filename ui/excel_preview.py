@@ -107,7 +107,6 @@ class ExcelPreviewPanel(ttk.Frame):
         bar = ttk.Frame(self, padding=(6, 4))
         bar.pack(fill=tk.X)
 
-        ttk.Label(bar, text="Sheet:").pack(side=tk.LEFT, padx=(0, 4))
         # A dedicated month/date selector makes historical BSR tabs easy to
         # navigate. It is kept separate from the general worksheet selector.
         ttk.Label(bar, text="Report month:").pack(side=tk.LEFT, padx=(0, 4))
