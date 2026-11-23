@@ -267,6 +267,17 @@ def load_grid(ws, max_r=100, max_c=75) -> Dict[Tuple[int, int], Any]:
 
 
 
+def _faculty_header_text(grid: dict, row: int, start_col: int) -> str:
+    """Join a faculty header split across merged-cell anchors in its 6-col block."""
+    parts = []
+    for col in range(start_col, start_col + 6):
+        value = grid.get((row, col))
+        text = _cell_str(value)
+        if text:
+            parts.append(text)
+    return " ".join(parts)
+
+
 def parse_sheet_allocations(ws, year_month: str, maps: dict, conn) -> List[dict]:
     """Parse by finding faculty header cells, then reading the block below them."""
     grid = load_grid(ws)
@@ -292,7 +303,9 @@ def parse_sheet_allocations(ws, year_month: str, maps: dict, conn) -> List[dict]
         for r in range(1, 55):
             fac_txt = grid.get((r, start_c))
             admission_header = _cell_str(fac_txt).lower().startswith("admission")
-            displayed_name, _hint = _parse_faculty_line(fac_txt)
+            displayed_name, _hint = _parse_faculty_line(
+                _faculty_header_text(grid, r, start_c)
+            )
             if not admission_header and not displayed_name:
                 continue
             initials = (
@@ -328,7 +341,7 @@ def parse_sheet_allocations(ws, year_month: str, maps: dict, conn) -> List[dict]
             careers_found = []
             for cr in range(career_start, career_start + 4):
                 # stop if we hit next faculty header
-                if _parse_faculty_line(grid.get((cr, start_c)))[0]:
+                if _parse_faculty_line(_faculty_header_text(grid, cr, start_c))[0]:
                     break
                 cval = grid.get((cr, start_c))
                 if not _is_career(cval):
