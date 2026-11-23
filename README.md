@@ -81,11 +81,12 @@ column widths, row heights and validations remain in Google Sheets.
    - the target worksheet's numeric `gid` as a fallback (the supplied link
      currently points to `1463201093`);
    - the same sync secret configured in Script Properties.
-6. Select the report month and click **Save & Sync**. The app generates the
-   selected month's workbook first, then sends that month's worksheet to the
-   bridge. The bridge first looks for a Google Sheets tab with the matching
-   month name (for example, `November-26`); if no matching tab exists, it
-   uses the configured `gid` fallback.
+6. Select the report month and click **Save & Sync** once. This saves the
+   connection settings and performs the first sync. The app generates the
+   selected month's workbook, then sends that worksheet to the bridge. The
+   bridge first looks for a Google Sheets tab with the matching month name
+   (for example, `November-26`); if no matching tab exists, it uses the
+   configured `gid` fallback.
 
 **Automatic synchronization after setup**
 
@@ -113,7 +114,8 @@ the application.
   `user_data/google_sheets_sync_state.json` and survive application restarts.
 - The application retries failed synchronization while it remains open and
   retries pending months again on the next launch.
-- The bottom status bar reports synchronization progress or pending months.
+- The bottom status bar reports synchronization progress, pending months and
+  the time of the last successful sync.
 - Use **Google Sheets Sync** to configure the bridge, perform a manual sync of
   the selected month, or retry a pending report.
 
