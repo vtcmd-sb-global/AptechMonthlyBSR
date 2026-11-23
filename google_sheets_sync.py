@@ -10,6 +10,7 @@ import urllib.request
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+import threading
 
 from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
@@ -18,6 +19,7 @@ ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = ROOT / "user_data" / "google_sheets.json"
 
 SYNC_STATE_PATH = ROOT / "user_data" / "google_sheets_sync_state.json"
+_SYNC_STATE_LOCK = threading.RLock()
 
 
 def _load_sync_state() -> dict:
@@ -56,7 +58,8 @@ def _save_sync_state(state: dict) -> None:
 
 def get_google_sheets_sync_state() -> dict:
     """Return a safe copy of pending months and synchronization metadata."""
-    return _load_sync_state()
+    with _SYNC_STATE_LOCK:
+        return _load_sync_state()
 
 
 def queue_google_sheets_sync(months) -> list[str]:
@@ -65,27 +68,30 @@ def queue_google_sheets_sync(months) -> list[str]:
     required = ("web_app_url", "spreadsheet_id", "sheet_id", "token")
     if any(not str(config.get(key, "")).strip() for key in required):
         return []
-    state = _load_sync_state()
-    valid = {str(month) for month in months if _valid_month(str(month))}
-    state["pending_months"] = sorted(set(state["pending_months"]) | valid)
-    state["last_error"] = None
-    _save_sync_state(state)
-    return state["pending_months"]
+    with _SYNC_STATE_LOCK:
+        state = _load_sync_state()
+        valid = {str(month) for month in months if _valid_month(str(month))}
+        state["pending_months"] = sorted(set(state["pending_months"]) | valid)
+        state["last_error"] = None
+        _save_sync_state(state)
+        return state["pending_months"]
 
 
 def mark_google_sheets_month_synced(month: str) -> None:
-    state = _load_sync_state()
-    state["pending_months"] = [item for item in state["pending_months"] if item != month]
-    state["last_success_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
-    state["last_success_month"] = month
-    state["last_error"] = None
-    _save_sync_state(state)
+    with _SYNC_STATE_LOCK:
+        state = _load_sync_state()
+        state["pending_months"] = [item for item in state["pending_months"] if item != month]
+        state["last_success_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+        state["last_success_month"] = month
+        state["last_error"] = None
+        _save_sync_state(state)
 
 
 def record_google_sheets_sync_error(error: str) -> None:
-    state = _load_sync_state()
-    state["last_error"] = str(error)
-    _save_sync_state(state)
+    with _SYNC_STATE_LOCK:
+        state = _load_sync_state()
+        state["last_error"] = str(error)
+        _save_sync_state(state)
 
 
 
