@@ -56,7 +56,6 @@ CANONICAL_FACULTY = [
     ("AR", "AR", "V"),
     ("SAA", "SAA", "V"),
     ("AM", "AM", "V"),
-    ("HA", "HA", "V"),
     ("MA", "MA", "V"),
     ("MAK", "MAK", "V"),
     ("MT", "MT", "V"),
