@@ -7,6 +7,8 @@ import tkinter as tk
 from tkinter import ttk
 from pathlib import Path
 from typing import Optional, Any, Dict, Tuple, List
+from datetime import datetime
+import re
 
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
@@ -83,11 +85,50 @@ def _format_value(value: Any) -> str:
     return str(value)
 
 
+def _preferred_sheet_name(sheet_names: List[str], workbook_path: str | Path) -> Optional[str]:
+    """Choose the report month from the output filename, then newest month tab."""
+    names = list(sheet_names)
+    name_set = set(names)
+
+    # Generated reports are named BSR_YYYY-MM.xlsx. Prefer that exact month.
+    match = re.search(r"BSR_(\d{4})-(\d{2})", Path(workbook_path).stem, re.IGNORECASE)
+    if match:
+        try:
+            target = datetime(int(match.group(1)), int(match.group(2)), 1).strftime("%B-%y")
+            if target in name_set:
+                return target
+        except ValueError:
+            pass
+
+    month_numbers = {
+        "january": 1, "february": 2, "feburary": 2, "march": 3,
+        "april": 4, "may": 5, "june": 6, "july": 7, "august": 8,
+        "september": 9, "october": 10, "november": 11, "december": 12,
+    }
+    candidates = []
+    for name in names:
+        match = re.search(r"([a-z]+)[\s_-]+(\d{2,4})(?:$|[^0-9])", name.strip(), re.IGNORECASE)
+        if not match:
+            continue
+        month = month_numbers.get(match.group(1).lower())
+        if not month:
+            continue
+        year = int(match.group(2))
+        if year < 100:
+            year += 2000
+        candidates.append((year, month, name))
+    if candidates:
+        return max(candidates)[2]
+
+    helpers = {"dashboard summary", "_data", "chart", "chart1", "allocations", "bsr"}
+    return next((name for name in names if name.strip().lower() not in helpers), names[0] if names else None)
+
+
 class ExcelPreviewPanel(ttk.Frame):
     """Tab content: sheet selector + scrollable Excel-like grid."""
 
     MAX_ROWS = 120
-    MAX_COLS = 30
+    MAX_COLS = 100
     MIN_COL_W = 40
     MAX_COL_W = 220
     DEFAULT_ROW_H = 22
@@ -200,13 +241,9 @@ class ExcelPreviewPanel(ttk.Frame):
             self._path = path
             names = list(self._wb.sheetnames)
             self.sheet_combo.configure(values=names)
-            # Prefer current month-looking sheet, else first non-helper
-            prefer = None
-            for n in names:
-                low = n.lower()
-                if low not in ("dashboard summary", "_data", "chart", "chart1"):
-                    prefer = n
-                    break
+            # Open the month represented by this generated report, not the
+            # first historical worksheet. Fall back to the newest month tab.
+            prefer = _preferred_sheet_name(names, path)
             self.sheet_var.set(prefer or (names[0] if names else ""))
             self.path_lbl.configure(text=str(path.name))
             self._render_sheet()
