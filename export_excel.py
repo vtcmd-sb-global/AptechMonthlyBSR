@@ -36,6 +36,9 @@ from calculations import full_dashboard
 
 ROOT = Path(__file__).parent
 TEMPLATE_CANDIDATES = [
+    # Prefer the most recently imported workbook so newly added months and
+    # their exact layout/formatting remain the export master.
+    ROOT / "user_data" / "latest_imported_bsr.xlsx",
     ROOT / "templates" / "21-August-2026 GLS Labstatus.xlsx",
     ROOT / "templates" / "GLS_Labstatus_template.xlsx",
     ROOT / "data" / "21-August-2026 GLS Labstatus.xlsx",
