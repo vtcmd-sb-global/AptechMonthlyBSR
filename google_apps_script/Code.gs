@@ -23,10 +23,12 @@ function doPost(e) {
       return json_({ success: false, error: "Unsupported sync action." });
     }
 
-    var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-    if (!spreadsheet || spreadsheet.getId() !== String(payload.spreadsheetId)) {
-      return json_({ success: false, error: "Spreadsheet ID does not match this Apps Script project." });
+    var expectedSpreadsheetId = PropertiesService.getScriptProperties()
+      .getProperty("BSR_SPREADSHEET_ID");
+    if (!expectedSpreadsheetId || expectedSpreadsheetId !== String(payload.spreadsheetId)) {
+      return json_({ success: false, error: "Spreadsheet ID does not match the configured BSR spreadsheet." });
     }
+    var spreadsheet = SpreadsheetApp.openById(expectedSpreadsheetId);
 
     var sheet = spreadsheet.getSheetById(Number(payload.sheetId));
     if (!sheet) {
