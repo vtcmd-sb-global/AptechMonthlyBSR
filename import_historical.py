@@ -118,13 +118,18 @@ def _cell_str(v) -> str:
 def _is_date_like(v) -> bool:
     if isinstance(v, (datetime, date)):
         return True
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return 20000 <= float(v) <= 80000
     s = _cell_str(v)
-    if re.match(r"^\d{4}-\d{2}-\d{2}", s):
-        return True
-    if re.match(r"^\d{1,2}[-/][A-Za-z]{3}[-/]\d{2,4}$", s):
-        return True
-    if re.match(r"^\d{1,2}-[A-Z]{3,9}-\d{2}$", s, re.I):
-        return True
+    for fmt in (
+        "%Y-%m-%d", "%d-%b-%y", "%d-%b-%Y", "%d/%m/%Y",
+        "%d/%m/%y", "%m/%d/%Y", "%d-%B-%y", "%d.%m.%Y",
+    ):
+        try:
+            datetime.strptime(s[:20], fmt)
+            return True
+        except Exception:
+            pass
     return False
 
 
@@ -147,7 +152,10 @@ def _fmt_date(v) -> Optional[str]:
     s = str(v).strip()
     if not s or s.lower().startswith("admission"):
         return None
-    for fmt in ("%Y-%m-%d", "%d-%b-%y", "%d-%b-%Y", "%d/%m/%Y", "%d-%B-%y"):
+    for fmt in (
+        "%Y-%m-%d", "%d-%b-%y", "%d-%b-%Y", "%d/%m/%Y",
+        "%d/%m/%y", "%m/%d/%Y", "%d-%B-%y", "%d.%m.%Y",
+    ):
         try:
             return datetime.strptime(s[:20], fmt).strftime("%Y-%m-%d")
         except Exception:
