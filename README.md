@@ -141,6 +141,9 @@ Distribute the complete `dist\\AptechMonthlyBSR` folder (not the EXE by
 itself). Zip that folder for convenient delivery. The master Excel template is
 bundled with the application. User data and generated reports remain outside
 the installation folder, so updating the application does not overwrite them.
+On first launch, the app also copies an existing database, imported master
+workbook, and generated reports from the earlier project-folder layout when
+those files are present; it does not overwrite files already in the new location.
 
 For a manual build:
 
