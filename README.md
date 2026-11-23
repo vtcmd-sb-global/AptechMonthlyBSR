@@ -69,8 +69,9 @@ need a Google account or internet connection for normal operation.
 - Export a formatted monthly BSR workbook whenever an Excel copy is required.
 - Application data is stored separately from the executable under
   `%LOCALAPPDATA%\\AptechMonthlyBSR`.
-- Back up `database\\monthly_bsr.db` in that folder regularly. Generated
-  Excel reports are stored in its `Output` subfolder.
+- Back up `%LOCALAPPDATA%\\AptechMonthlyBSR\\database\\monthly_bsr.db`
+  regularly. Generated Excel reports are stored in
+  `%LOCALAPPDATA%\\AptechMonthlyBSR\\Output`.
 
 Excel is an import/export format only. It is not the live database and no
 external spreadsheet is synchronized.
@@ -92,29 +93,38 @@ python main.py
 
 ## Project layout
 
-```
-Aptech_LabTimetable/
-├── main.py                 # Entry point
-├── app_paths.py            # Resource and per-user data paths\n├── database.py             # SQLite layer (per-user application data)
-├── models.py               # CRUD including faculty management
-├── calculations.py         # All aggregates & reports
-├── export_excel.py         # Template-aligned Excel exporter
-├── seed_sample_data.py     # Optional demo data
+~~~~
+AptechMonthlyBSR/
+├── main.py                  # Application entry point
+├── app_paths.py             # Bundled-resource and user-data paths
+├── database.py              # SQLite database layer
+├── models.py                # Data access and CRUD operations
+├── calculations.py          # Dashboard and report calculations
+├── export_excel.py          # Template-aligned Excel exporter
+├── import_historical.py     # Excel import
 ├── ui/
-│   └── main_window.py      # Tkinter GUI (Allocations / Dashboard / Faculty)
-├── templates/              # Master Excel templates (do not edit casually)
-├── database/
-│   └── lab_status.db       # Persistent SQLite file – backup this
-├── Output/                 # Generated Lab Status Excel reports only
+│   ├── main_window.py       # Tkinter desktop interface
+│   ├── excel_preview.py     # In-app workbook preview
+│   └── splash.py
+├── templates/               # Bundled master Excel templates
+├── tests/                   # Regression tests
+├── AptechMonthlyBSR.spec    # PyInstaller build definition
+├── build_windows.bat        # Windows build script
 ├── requirements.txt
 └── README.md
-```
+~~~~
+
+Runtime data is stored separately under `%LOCALAPPDATA%\\AptechMonthlyBSR`:
+SQLite database, imported master workbook, and generated Excel reports. These
+files are not stored in or overwritten by the executable bundle.
 
 ### Database backup / restore
-- The live database is a normal file: `database/monthly_bsr.db`
-- **Backup:** copy that file somewhere safe
-- **Restore:** stop the app, replace `database/monthly_bsr.db` with your backup, start again
-- Startup never wipes an existing database; lookup seeds run only on empty tables
+- Live database: `%LOCALAPPDATA%\\AptechMonthlyBSR\\database\\monthly_bsr.db`
+- **Backup:** close the application and copy the database file to a safe location.
+- **Restore:** close the application and replace the database file with your backup.
+- Startup never wipes an existing database; lookup seeds run only on empty tables.
+- Existing database and report files in the earlier project-folder layout are
+  copied into the new data folder on first launch when possible.
 
 ### Faculty management
 Use the **Faculty** tab to Add / Edit / Deactivate / Reactivate / Delete teachers.
