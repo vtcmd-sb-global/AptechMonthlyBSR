@@ -1618,6 +1618,10 @@ class MainApp(tk.Tk):
         """Drain the durable month queue without blocking the Tkinter interface."""
         if getattr(self, "_google_syncing", False):
             return
+        # Preview and export both write BSR_YYYY-MM.xlsx; serialize those jobs.
+        if getattr(self, "_preview_refreshing", False) or getattr(self, "_exporting", False):
+            self.after(500, self._start_pending_google_sheets_sync)
+            return
         config = load_google_sheets_config()
         required = ("web_app_url", "spreadsheet_id", "sheet_id", "token")
         if any(not str(config.get(key, "")).strip() for key in required):
