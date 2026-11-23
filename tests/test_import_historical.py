@@ -6,6 +6,8 @@ from import_historical import (
     _faculty_header_text,
     _parse_faculty_line,
     _resolve_faculty_initials,
+    _is_date_like,
+    _fmt_date,
     parse_sheet_allocations,
     sheet_to_year_month,
 )
@@ -166,6 +168,11 @@ class BsrImportTests(unittest.TestCase):
         self.assertEqual(sheet_to_year_month("Aug-26"), "2026-08")
         self.assertEqual(sheet_to_year_month("2026-08"), "2026-08")
         self.assertEqual(sheet_to_year_month("Sept 2026 BSR"), "2026-09")
+
+    def test_common_excel_date_strings_are_not_misread_as_careers(self):
+        self.assertTrue(_is_date_like("19/09/2026"))
+        self.assertTrue(_is_date_like("09/19/2026"))
+        self.assertEqual(_fmt_date("19/09/2026"), "2026-09-19")
 
 
 if __name__ == "__main__":
