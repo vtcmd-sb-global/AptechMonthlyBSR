@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import re
+import shutil
+from difflib import SequenceMatcher
 from datetime import datetime, date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -139,7 +141,11 @@ def _to_int(v) -> int:
 
 
 def _parse_faculty_line(text) -> Tuple[str, str]:
-    """Only accept '(COURSE) INIT' patterns e.g. '(AI) MS'."""
+    """Parse a BSR faculty header and return its displayed name and course.
+
+    Recent workbooks sometimes use full names (for example, '(AI) Talha')
+    instead of roster initials (for example, '(AI) T').
+    """
     if text is None or _is_date_like(text):
         return "", ""
     t = _cell_str(text)
@@ -147,17 +153,57 @@ def _parse_faculty_line(text) -> Tuple[str, str]:
         return "", ""
     if re.search(r"\d{4}", t) and "-" in t:
         return "", ""
-    # Must be (something) initials
-    m = re.match(r"^\(([^)]+)\)\s*([A-Za-z]{1,5})\s*$", t)
-    if not m:
-        m = re.match(r"^\(([^)]+)\)\s+([A-Za-z]{1,5})\b", t)
+    m = re.match(r"^\(([^)]+)\)\s*(.*?)\s*$", t)
     if not m:
         return "", ""
-    course, init = m.group(1).strip(), m.group(2).upper()
-    # reject if course looks like day group or empty
-    if course.upper() in ("MWF", "TTS", "M/W/F", "T/T/S"):
+    course, person = m.group(1).strip(), m.group(2).strip()
+    if not person or course.upper() in ("MWF", "TTS", "M/W/F", "T/T/S"):
         return "", ""
-    return init, course
+    return person.upper(), course
+
+
+def _normalise_person_name(value: str) -> str:
+    return " ".join(re.findall(r"[a-z]+", _cell_str(value).lower()))
+
+
+def _resolve_faculty_initials(display_name: str, maps: dict) -> Optional[str]:
+    """Resolve a header's initials or displayed name to the canonical roster.
+
+    Exact initials/name matches are preferred. A unique close token match
+    handles common shortened display names such as 'Moiz' or 'Amaan'.
+    """
+    raw = (display_name or "").strip().upper()
+    if raw in maps["faculty"]:
+        return raw
+
+    normal = _normalise_person_name(raw)
+    if not normal:
+        return None
+    names = maps.get("faculty_names", {})
+    if normal in names:
+        return names[normal]
+
+    raw_tokens = normal.split()
+    scored = []
+    for full_name, initials in names.items():
+        name_tokens = full_name.split()
+        score = 0.0
+        if set(raw_tokens) & set(name_tokens):
+            score = 1.0
+        else:
+            score = max(
+                (SequenceMatcher(None, a, b).ratio()
+                 for a in raw_tokens for b in name_tokens),
+                default=0.0,
+            )
+        if score >= 0.86:
+            scored.append((score, initials))
+
+    if not scored:
+        return None
+    best = max(score for score, _ in scored)
+    matches = {initials for score, initials in scored if score == best}
+    return next(iter(matches)) if len(matches) == 1 else None
 
 
 def _norm_career(text: str) -> str:
@@ -245,10 +291,15 @@ def parse_sheet_allocations(ws, year_month: str, maps: dict, conn) -> List[dict]
     for (slot, day), start_c in SLOT_DAY_COLS.items():
         for r in range(1, 55):
             fac_txt = grid.get((r, start_c))
-            initials, _hint = _parse_faculty_line(fac_txt)
-            if not initials:
+            admission_header = _cell_str(fac_txt).lower().startswith("admission")
+            displayed_name, _hint = _parse_faculty_line(fac_txt)
+            if not admission_header and not displayed_name:
                 continue
-            if initials not in known_inits and not re.fullmatch(r"[A-Z]{1,5}", initials):
+            initials = (
+                _resolve_faculty_initials(displayed_name, maps)
+                if displayed_name else None
+            )
+            if not admission_header and not initials:
                 continue
 
             # Block rows relative to faculty row
@@ -270,8 +321,8 @@ def parse_sheet_allocations(ws, year_month: str, maps: dict, conn) -> List[dict]
                 mod_clean = ""
 
             mod_start = _fmt_date(grid.get((date_r, start_c)))
-            admission = False
-            if not mod_start and _cell_str(grid.get((date_r, start_c))).lower().startswith("admission"):
+            admission = admission_header
+            if _cell_str(grid.get((date_r, start_c))).lower().startswith("admission"):
                 admission = True
 
             careers_found = []
@@ -299,15 +350,37 @@ def parse_sheet_allocations(ws, year_month: str, maps: dict, conn) -> List[dict]
                         batch_start = _fmt_date(grid.get((br, start_c)))
                         break
 
-            if not careers_found:
+            if not careers_found and not admission:
                 continue
 
             lab_code = lab_for_row(r)
-            fid = ensure_faculty(conn, initials, maps)
+            fid = ensure_faculty(conn, initials, maps) if initials else None
             slot_id = maps["slots"].get(slot)
             day_id = maps["days"].get(day)
             lab_id = maps["labs"].get(lab_code)
-            if not all([fid, slot_id, day_id, lab_id]):
+            if not all([slot_id, day_id, lab_id]):
+                continue
+
+            # An empty Admission Open block is still a real BSR state. Keep
+            # it editable in the application instead of silently dropping it.
+            if not careers_found and admission:
+                results.append({
+                    "faculty_id": fid,
+                    "career_id": None,
+                    "lab_id": lab_id,
+                    "time_slot_id": slot_id,
+                    "day_group_id": day_id,
+                    "batch_code": batch,
+                    "module_name": mod_clean or None,
+                    "students": 0,
+                    "module_start_date": mod_start,
+                    "actual_start_date": batch_start,
+                    "notes": None,
+                    "is_admission_open": True,
+                    "report_month": year_month,
+                    "career_code": "",
+                    "faculty_initials": initials or "",
+                })
                 continue
 
             for career_code, students in careers_found:
@@ -503,8 +576,16 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = True) -> 
                         (init, name, status),
                     )
 
+        faculty_rows = conn.execute(
+            "SELECT initials, full_name FROM faculty"
+        ).fetchall()
         maps = {
-            "faculty": {r[0].upper(): r[1] for r in conn.execute("SELECT initials, id FROM faculty").fetchall()},
+            "faculty": {r["initials"].upper(): r["initials"] for r in faculty_rows},
+            "faculty_ids": {r["initials"].upper(): r["initials"] for r in faculty_rows},
+            "faculty_names": {
+                _normalise_person_name(r["full_name"]): r["initials"].upper()
+                for r in faculty_rows if _normalise_person_name(r["full_name"])
+            },
             "labs": {r[0].upper(): r[1] for r in conn.execute("SELECT lab_code, id FROM labs").fetchall()},
             "careers": {r[0].upper(): r[1] for r in conn.execute("SELECT code, id FROM careers").fetchall()},
             "slots": {r[0].upper(): r[1] for r in conn.execute("SELECT code, id FROM time_slots").fetchall()},
@@ -607,6 +688,13 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = True) -> 
         )
 
     wb.close()
+
+    # Keep the uploaded workbook as the next export's visual master. This
+    # preserves the newest monthly sheet layout, merges, widths and styling.
+    imported_template = ROOT / "user_data" / "latest_imported_bsr.xlsx"
+    imported_template.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, imported_template)
+
     return summary
 
 
