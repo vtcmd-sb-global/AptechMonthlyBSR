@@ -60,6 +60,25 @@ SLOT_DAY_COLS = {
     ("G", "TTS"): 68,
 }
 
+def _block_end_col(start_col: int) -> int:
+    """Return the final column owned by a schedule block.
+
+    The D-slot MWF block is four columns wide; other blocks are six or
+    eight columns wide. Using the next block's start prevents overlap.
+    """
+    next_starts = [col for col in SLOT_DAY_COLS.values() if col > start_col]
+    return min(next_starts) - 1 if next_starts else start_col + 5
+
+
+def _block_columns(start_col: int):
+    return range(start_col, _block_end_col(start_col) + 1)
+
+
+def _student_value_col(start_col: int) -> int:
+    """Use the usual student-count column, clamped inside the current block."""
+    return min(start_col + 4, _block_end_col(start_col))
+
+
 LAB_ROWS = {
     "L1": (4, 10),
     "L2": (11, 17),
@@ -405,8 +424,7 @@ def _clear_all_sample_data(ws):
     """
     data_cols = set()
     for start in SLOT_DAY_COLS.values():
-        for c in range(start, start + 6):
-            data_cols.add(c)
+        data_cols.update(_block_columns(start))
 
     # 1) Lab grid – clear values + fills (only data columns inside lab blocks)
     for lab_code, (r1, r2) in LAB_ROWS.items():
@@ -550,11 +568,12 @@ def _set_date_cell(ws, row: int, col: int, val) -> bool:
 
 
 def _apply_block_fill(ws, r1: int, r2: int, start_c: int, body_fill: PatternFill):
-    """Colour the 6-col block: red header row, body_fill on remaining rows."""
-    for c in range(start_c, start_c + 6):
+    """Colour only the columns owned by this schedule block."""
+    end_c = _block_end_col(start_c)
+    for c in range(start_c, end_c + 1):
         _safe_set_fill(ws, r1 + OFF_FACULTY, c, HEADER_RED)
     for r in range(r1 + OFF_BATCH, r2 + 1):
-        for c in range(start_c, start_c + 6):
+        for c in range(start_c, end_c + 1):
             _safe_set_fill(ws, r, c, body_fill)
 
 
@@ -635,10 +654,11 @@ def _fill_lab_data(ws, allocs: list, color_map: Dict[str, PatternFill]):
         for (slot, day), start_c in SLOT_DAY_COLS.items():
             items = grid.get((lab_code, slot, day), [])
 
+            end_c = _block_end_col(start_c)
             if not items:
-                # No allocation → leave the block empty (no random text)
+                # No allocation → leave only this block empty.
                 for r in range(r1, r2 + 1):
-                    for c in range(start_c, start_c + 6):
+                    for c in range(start_c, end_c + 1):
                         _safe_set_value(ws, r, c, None)
                         _clear_cell_fill(ws, r, c)
                 continue
@@ -654,7 +674,7 @@ def _fill_lab_data(ws, allocs: list, color_map: Dict[str, PatternFill]):
             if adm_only and not normal:
                 # Pure Admission Open: only the status text in faculty-header cell
                 for r in range(r1, r2 + 1):
-                    for c in range(start_c, start_c + 6):
+                    for c in range(start_c, end_c + 1):
                         _safe_set_value(ws, r, c, None)
                         _clear_cell_fill(ws, r, c)
                 _safe_set_value(ws, r1 + OFF_FACULTY, start_c, "Admission Open")
@@ -699,6 +719,8 @@ def _fill_lab_data(ws, allocs: list, color_map: Dict[str, PatternFill]):
                 _safe_set_value(ws, crow, start_c, item.career_code or None)
                 stu = item.students if item.students else None
                 for offset in (4, 3, 5, 2, 1):
+                    if start_c + offset > end_c:
+                        continue
                     if _safe_set_value(ws, crow, start_c + offset, stu):
                         break
 
@@ -706,6 +728,8 @@ def _fill_lab_data(ws, allocs: list, color_map: Dict[str, PatternFill]):
                 last_crow = r1 + OFF_CAREER + max_career_slots - 1
                 extra_note = f"+{len(write_items) - max_career_slots} more"
                 for offset in (5, 3, 1, 2):
+                    if start_c + offset > end_c:
+                        continue
                     if _safe_set_value(ws, last_crow, start_c + offset, extra_note):
                         break
 
@@ -768,11 +792,12 @@ def _fill_slot_summaries(ws, allocs: list):
         bc = len(batches.get(key, set()))
         if cs or ss or bc:
             _safe_set_value(ws, 55, start_c, "Career")
-            _safe_set_value(ws, 55, start_c + 4, cs if cs else None)
+            value_col = _student_value_col(start_c)
+            _safe_set_value(ws, 55, value_col, cs if cs else None)
             _safe_set_value(ws, 56, start_c, "STC/SP" if ss else "STC")
-            _safe_set_value(ws, 56, start_c + 4, ss if ss else None)
+            _safe_set_value(ws, 56, value_col, ss if ss else None)
             _safe_set_value(ws, 58, start_c, "Total Batch")
-            _safe_set_value(ws, 58, start_c + 4, bc if bc else None)
+            _safe_set_value(ws, 58, value_col, bc if bc else None)
 
 
 def _fill_faculty_table(ws, dash: dict):
