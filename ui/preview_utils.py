@@ -22,12 +22,18 @@ def preferred_sheet_name(sheet_names: List[str], workbook_path: str | Path) -> O
             pass
 
     month_numbers = {
-        "january": 1, "february": 2, "feburary": 2, "march": 3,
-        "april": 4, "may": 5, "june": 6, "july": 7, "august": 8,
-        "september": 9, "october": 10, "november": 11, "december": 12,
+        "jan": 1, "january": 1, "feb": 2, "february": 2, "feburary": 2,
+        "mar": 3, "march": 3, "apr": 4, "april": 4, "may": 5,
+        "jun": 6, "june": 6, "jul": 7, "july": 7, "aug": 8, "august": 8,
+        "sep": 9, "sept": 9, "september": 9, "oct": 10, "october": 10,
+        "nov": 11, "november": 11, "dec": 12, "december": 12,
     }
     candidates = []
     for name in names:
+        iso = re.search(r"(?<!\d)(20\d{2})[-_\s](0?[1-9]|1[0-2])(?!\d)", name.strip())
+        if iso:
+            candidates.append((int(iso.group(1)), int(iso.group(2)), name))
+            continue
         match = re.search(r"([a-z]+)[\s_-]+(\d{2,4})(?:$|[^0-9])", name.strip(), re.IGNORECASE)
         if not match:
             continue

@@ -6,6 +6,8 @@ from import_historical import (
     _faculty_header_text,
     _parse_faculty_line,
     _resolve_faculty_initials,
+    _is_date_like,
+    _fmt_date,
     parse_sheet_allocations,
     sheet_to_year_month,
 )
@@ -113,6 +115,64 @@ class BsrImportTests(unittest.TestCase):
         self.assertIsNone(open_row["career_id"])
         self.assertTrue(open_row["is_admission_open"])
         self.assertEqual(open_row["students"], 0)
+
+    def test_import_scans_rows_beyond_old_fixed_limit_and_keeps_custom_values(self):
+        import sqlite3
+        from import_historical import ensure_faculty, load_grid
+
+        wb = Workbook()
+        ws = wb.active
+        ws["A56"] = "L8"
+        ws["B55"] = "(AI) New Person"
+        ws["B56"] = "CUSTOM-202611A"
+        ws["B57"] = "Custom Module"
+        ws["B58"] = datetime(2026, 11, 3)
+        ws["B59"] = "NEW PROGRAM"
+        ws["F59"] = 7
+        ws["B60"] = "SECOND PROGRAM"
+        ws["F60"] = 4
+        ws["B61"] = None
+        ws["B62"] = None
+        # A populated cell beyond the former 75-column import limit is retained.
+        ws.cell(70, 82, "far-right data")
+
+        conn = sqlite3.connect(":memory:")
+        conn.execute(
+            "CREATE TABLE faculty (id INTEGER PRIMARY KEY, initials TEXT UNIQUE, "
+            "full_name TEXT, status TEXT, active INTEGER)"
+        )
+        conn.execute(
+            "CREATE TABLE careers (id INTEGER PRIMARY KEY, code TEXT UNIQUE, name TEXT, "
+            "is_stc INTEGER, is_sp INTEGER, sort_order INTEGER)"
+        )
+        maps = {
+            **self.maps,
+            "faculty": dict(self.maps["faculty"]),
+            "faculty_names": dict(self.maps["faculty_names"]),
+            "labs": {**self.maps["labs"], "L8": 8},
+            "careers": dict(self.maps["careers"]),
+        }
+        grid = load_grid(ws)
+        self.assertEqual(grid[(70, 82)], "far-right data")
+        rows = parse_sheet_allocations(ws, "2026-11", maps, conn)
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({row["career_code"] for row in rows}, {"NEW PROGRAM", "SECOND PROGRAM"})
+        self.assertEqual({row["students"] for row in rows}, {4, 7})
+        self.assertTrue(all(row["faculty_id"] is not None for row in rows))
+        self.assertTrue(all(row["faculty_initials"] for row in rows))
+        self.assertTrue(all(row["lab_id"] == 8 for row in rows))
+        conn.close()
+
+    def test_month_parser_accepts_abbreviated_and_iso_month_names(self):
+        self.assertEqual(sheet_to_year_month("Aug-26"), "2026-08")
+        self.assertEqual(sheet_to_year_month("2026-08"), "2026-08")
+        self.assertEqual(sheet_to_year_month("Sept 2026 BSR"), "2026-09")
+
+    def test_common_excel_date_strings_are_not_misread_as_careers(self):
+        self.assertTrue(_is_date_like("19/09/2026"))
+        self.assertTrue(_is_date_like("09/19/2026"))
+        self.assertEqual(_fmt_date("19/09/2026"), "2026-09-19")
 
 
 if __name__ == "__main__":

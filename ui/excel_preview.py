@@ -6,6 +6,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 from pathlib import Path
+from datetime import datetime
 from typing import Optional, Any, Dict, Tuple, List
 from openpyxl import load_workbook
 from ui.preview_utils import preferred_sheet_name
@@ -106,10 +107,20 @@ class ExcelPreviewPanel(ttk.Frame):
         bar = ttk.Frame(self, padding=(6, 4))
         bar.pack(fill=tk.X)
 
+        # A dedicated month/date selector makes historical BSR tabs easy to
+        # navigate. It is kept separate from the general worksheet selector.
+        ttk.Label(bar, text="Report month:").pack(side=tk.LEFT, padx=(0, 4))
+        self.month_var = tk.StringVar()
+        self.month_combo = ttk.Combobox(
+            bar, textvariable=self.month_var, width=17, state="readonly"
+        )
+        self.month_combo.pack(side=tk.LEFT, padx=(0, 8))
+        self.month_combo.bind("<<ComboboxSelected>>", self._on_month_changed)
+
         ttk.Label(bar, text="Sheet:").pack(side=tk.LEFT, padx=(0, 4))
         self.sheet_var = tk.StringVar()
         self.sheet_combo = ttk.Combobox(
-            bar, textvariable=self.sheet_var, width=22, state="readonly"
+            bar, textvariable=self.sheet_var, width=20, state="readonly"
         )
         self.sheet_combo.pack(side=tk.LEFT, padx=(0, 8))
         self.sheet_combo.bind("<<ComboboxSelected>>", self._on_sheet_changed)
@@ -200,9 +211,23 @@ class ExcelPreviewPanel(ttk.Frame):
             self._path = path
             names = list(self._wb.sheetnames)
             self.sheet_combo.configure(values=names)
-            # Open the month represented by this generated report, not the
-            # first historical worksheet. Fall back to the newest month tab.
+            self._month_sheet_map = self._build_month_sheet_map(names)
+            month_labels = list(self._month_sheet_map.keys())
+            self.month_combo.configure(values=month_labels)
+            # Prefer the report month encoded in the filename; otherwise use
+            # the newest month worksheet, then the first useful worksheet.
             prefer = preferred_sheet_name(names, path)
+            preferred_label = next(
+                (label for label, sheet in self._month_sheet_map.items() if sheet == prefer),
+                None,
+            )
+            if preferred_label:
+                self.month_var.set(preferred_label)
+            elif month_labels:
+                self.month_var.set(month_labels[-1])
+                prefer = self._month_sheet_map[month_labels[-1]]
+            else:
+                self.month_var.set("")
             self.sheet_var.set(prefer or (names[0] if names else ""))
             self.path_lbl.configure(text=str(path.name))
             self._render_sheet()
@@ -231,7 +256,35 @@ class ExcelPreviewPanel(ttk.Frame):
         except Exception:
             pass
 
+    @staticmethod
+    def _build_month_sheet_map(sheet_names):
+        """Return human-readable month labels mapped to their worksheet names."""
+        from import_historical import sheet_to_year_month
+        month_sheets = []
+        for sheet in sheet_names:
+            year_month = sheet_to_year_month(sheet)
+            if not year_month:
+                continue
+            try:
+                label = datetime.strptime(year_month, "%Y-%m").strftime("%B %Y")
+            except ValueError:
+                continue
+            month_sheets.append((year_month, label, sheet))
+        month_sheets.sort(key=lambda item: item[0])
+        return {label: sheet for _ym, label, sheet in month_sheets}
+
+    def _on_month_changed(self, _e=None):
+        sheet = getattr(self, "_month_sheet_map", {}).get(self.month_var.get())
+        if sheet:
+            self.sheet_var.set(sheet)
+            self._render_sheet()
+
     def _on_sheet_changed(self, _e=None):
+        selected = self.sheet_var.get()
+        for label, sheet in getattr(self, "_month_sheet_map", {}).items():
+            if sheet == selected:
+                self.month_var.set(label)
+                break
         self._render_sheet()
 
     def _clear_grid(self):
@@ -289,25 +342,21 @@ class ExcelPreviewPanel(ttk.Frame):
         self._ws = ws
         self._build_merge_maps(ws)
 
-        max_r = min(ws.max_row or 1, self.MAX_ROWS)
-        max_c = min(ws.max_column or 1, self.MAX_COLS)
-
-        # Shrink to used area with content
-        used_r, used_c = 1, 1
-        for r in range(1, max_r + 1):
-            for c in range(1, max_c + 1):
-                cell = ws.cell(r, c)
-                if cell.value is not None:
-                    used_r = max(used_r, r)
-                    used_c = max(used_c, c)
-        # Include a little padding
-        max_r = min(max_r, used_r + 2)
-        max_c = min(max_c, used_c + 1)
-
-        truncated = (ws.max_row or 0) > self.MAX_ROWS or (ws.max_column or 0) > self.MAX_COLS
-        self.info_lbl.configure(
-            text=f"{max_r}×{max_c} cells" + (" (preview limited)" if truncated else "")
-        )
+        # Use every non-empty cell, not arbitrary row/column limits. Excel
+        # templates often contain schedules extending beyond the old 120x100
+        # preview window, while formatting alone can inflate ws.max_row.
+        populated = [cell for cell in ws._cells.values() if cell.value is not None]
+        if populated:
+            max_r = max(cell.row for cell in populated)
+            max_c = max(cell.column for cell in populated)
+        else:
+            max_r = max_c = 1
+        for merged_range in ws.merged_cells.ranges:
+            max_r = max(max_r, merged_range.max_row)
+            max_c = max(max_c, merged_range.max_col)
+        max_r += 1
+        max_c += 1
+        self.info_lbl.configure(text=f"{max_r}×{max_c} cells")
 
         # Header row (column letters) + row numbers — Excel-like chrome
         grid = tk.Frame(self.inner, bg="#c0c0c0")
