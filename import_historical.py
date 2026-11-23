@@ -577,11 +577,10 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = True) -> 
                     )
 
         faculty_rows = conn.execute(
-            "SELECT initials, full_name FROM faculty"
+            "SELECT id, initials, full_name FROM faculty"
         ).fetchall()
         maps = {
-            "faculty": {r["initials"].upper(): r["initials"] for r in faculty_rows},
-            "faculty_ids": {r["initials"].upper(): r["initials"] for r in faculty_rows},
+            "faculty": {r["initials"].upper(): r["id"] for r in faculty_rows},
             "faculty_names": {
                 _normalise_person_name(r["full_name"]): r["initials"].upper()
                 for r in faculty_rows if _normalise_person_name(r["full_name"])
