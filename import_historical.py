@@ -76,7 +76,7 @@ CAREER_ALIASES = {
 
 
 def sheet_to_year_month(name: str) -> Optional[str]:
-    n = (name or "").strip().lower().replace(" ", "")
+    n = (name or "").strip().lower()
     m = re.search(r"([a-z]+)[\s_-]+(\d{2,4})(?:$|[^0-9])", n)
     if not m:
         return None
