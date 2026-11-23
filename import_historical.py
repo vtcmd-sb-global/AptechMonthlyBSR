@@ -34,9 +34,11 @@ SLOT_DAY_COLS = {
 }
 
 MONTH_NAME_TO_NUM = {
-    "january": 1, "february": 2, "feburary": 2, "march": 3, "april": 4,
-    "may": 5, "june": 6, "july": 7, "august": 8, "september": 9,
-    "october": 10, "november": 11, "december": 12,
+    "jan": 1, "january": 1, "feb": 2, "february": 2, "feburary": 2,
+    "mar": 3, "march": 3, "apr": 4, "april": 4, "may": 5,
+    "jun": 6, "june": 6, "jul": 7, "july": 7, "aug": 8, "august": 8,
+    "sep": 9, "sept": 9, "september": 9, "oct": 10, "october": 10,
+    "nov": 11, "november": 11, "dec": 12, "december": 12,
 }
 
 # Canonical faculty roster (static reference data from BSR)
@@ -85,7 +87,13 @@ CAREER_ALIASES = {
 
 
 def sheet_to_year_month(name: str) -> Optional[str]:
+    """Recognise common monthly worksheet labels without relying on one spelling."""
     n = (name or "").strip().lower()
+    # ISO-style labels: 2026-08 / 2026_08 / 2026 08.
+    m = re.search(r"(?<!\d)(20\d{2})[-_\s](0?[1-9]|1[0-2])(?!\d)", n)
+    if m:
+        return f"{int(m.group(1)):04d}-{int(m.group(2)):02d}"
+    # Month names or abbreviations: August-26, Aug 2026, February_26.
     m = re.search(r"([a-z]+)[\s_-]+(\d{2,4})(?:$|[^0-9])", n)
     if not m:
         return None
@@ -127,6 +135,15 @@ def _fmt_date(v) -> Optional[str]:
         return v.strftime("%Y-%m-%d")
     if isinstance(v, date):
         return v.strftime("%Y-%m-%d")
+    # Some source workbooks store dates as raw Excel serial numbers.
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        try:
+            from openpyxl.utils.datetime import from_excel
+            converted = from_excel(v)
+            if isinstance(converted, (datetime, date)):
+                return converted.strftime("%Y-%m-%d")
+        except Exception:
+            pass
     s = str(v).strip()
     if not s or s.lower().startswith("admission"):
         return None
@@ -219,10 +236,28 @@ def _norm_career(text: str) -> str:
 
 
 def _is_career(text) -> bool:
+    """Recognise known programs and reasonable custom career labels.
+
+    The previous allow-list silently discarded every institute-specific or
+    newly introduced program that was not already hard-coded in the app.
+    """
     if text is None or _is_date_like(text):
         return False
-    t = _norm_career(_cell_str(text))
-    return t in KNOWN_CAREERS or t in CAREER_ALIASES
+    raw = _cell_str(text)
+    t = _norm_career(raw)
+    if t in KNOWN_CAREERS or t in CAREER_ALIASES:
+        return True
+    if not raw or _is_batch_code(raw) or re.fullmatch(r"[-+]?\d+(?:\.\d+)?", raw):
+        return False
+    reserved = {
+        "ADMISSION OPEN", "INITIAL", "STATUS", "FACULTY", "TOTAL",
+        "TOTAL STUDENT", "TOTAL STUDENTS", "STC BEG", "STC END",
+        "SP BEG", "SP END", "MWF", "TTS", "CI5", "C15", "CIS",
+        "LAB", "MODULE", "BATCH", "STUDENTS",
+    }
+    if t in reserved or re.fullmatch(r"L[1-8]", t):
+        return False
+    return bool(re.fullmatch(r"[A-Z][A-Z0-9 &/+()._-]{0,29}", t))
 
 
 def _is_batch_code(text) -> bool:
@@ -234,18 +269,17 @@ def _is_batch_code(text) -> bool:
 
 
 def extract_faculty_from_sheet(ws) -> List[Tuple[str, str, str]]:
-    """Read INITIAL / STATUS / Faculty ACCP from bottom faculty table."""
+    """Read the faculty roster wherever it appears in the worksheet."""
     found = []
-    # scan rows 55-90 for INITIAL header then data
     header_row = None
-    for r in range(55, 95):
+    for r in range(1, (ws.max_row or 1) + 1):
         v = ws.cell(r, 2).value
         if v and str(v).strip().upper() == "INITIAL":
             header_row = r
             break
     if not header_row:
         return found
-    for r in range(header_row + 1, header_row + 20):
+    for r in range(header_row + 1, min((ws.max_row or header_row) + 1, header_row + 100)):
         init = ws.cell(r, 2).value
         status = ws.cell(r, 4).value
         name = ws.cell(r, 5).value
@@ -264,12 +298,17 @@ def extract_faculty_from_sheet(ws) -> List[Tuple[str, str, str]]:
     return found
 
 
-def load_grid(ws, max_r=100, max_c=75) -> Dict[Tuple[int, int], Any]:
+def load_grid(ws, max_r=None, max_c=None) -> Dict[Tuple[int, int], Any]:
+    """Load all populated cells; do not truncate imported workbooks at 100x75."""
     grid = {}
-    for r_idx, row in enumerate(ws.iter_rows(min_row=1, max_row=max_r, max_col=max_c, values_only=True), 1):
-        for c_idx, v in enumerate(row, 1):
-            if v not in (None, ""):
-                grid[(r_idx, c_idx)] = v
+    max_r = max_r or (ws.max_row or 1)
+    max_c = max_c or (ws.max_column or 1)
+    for r_idx, row in enumerate(
+        ws.iter_rows(min_row=1, max_row=max_r, max_col=max_c, values_only=True), 1
+    ):
+        for c_idx, value in enumerate(row, 1):
+            if value not in (None, ""):
+                grid[(r_idx, c_idx)] = value
     return grid
 
 
@@ -296,7 +335,7 @@ def parse_sheet_allocations(ws, year_month: str, maps: dict, conn) -> List[dict]
     # lab row markers
     lab_at = {}
     for (r, c), v in grid.items():
-        if c == 1 and isinstance(v, str) and re.fullmatch(r"L[1-7]", v.strip().upper()):
+        if c == 1 and isinstance(v, str) and re.fullmatch(r"L[1-8]", v.strip().upper()):
             lab_at[r] = v.strip().upper()
 
     def lab_for_row(r: int) -> str:
@@ -308,11 +347,10 @@ def parse_sheet_allocations(ws, year_month: str, maps: dict, conn) -> List[dict]
         return best[1] if best else "L1"
 
     results = []
-    known_inits = set(maps["faculty"].keys())
-
-    # Scan all slot columns for faculty pattern cells
+    # Scan every worksheet row; real BSRs can extend below the old row-54 cutoff.
+    last_row = max((r for r, _c in grid.keys()), default=1)
     for (slot, day), start_c in SLOT_DAY_COLS.items():
-        for r in range(1, 55):
+        for r in range(1, last_row + 1):
             fac_txt = grid.get((r, start_c))
             admission_header = _cell_str(fac_txt).lower().startswith("admission")
             displayed_name, _hint = _parse_faculty_line(
@@ -351,11 +389,19 @@ def parse_sheet_allocations(ws, year_month: str, maps: dict, conn) -> List[dict]
                 admission = True
 
             careers_found = []
-            for cr in range(career_start, career_start + 4):
-                # stop if we hit next faculty header
+            blank_career_rows = 0
+            # Read the complete career list in this block. The old four-row
+            # limit dropped additional programs from otherwise valid batches.
+            for cr in range(career_start, min(last_row + 1, career_start + 16)):
                 if _parse_faculty_line(_faculty_header_text(grid, cr, start_c))[0]:
                     break
                 cval = grid.get((cr, start_c))
+                if cval in (None, ""):
+                    blank_career_rows += 1
+                    if blank_career_rows >= 2:
+                        break
+                    continue
+                blank_career_rows = 0
                 if not _is_career(cval):
                     continue
                 stud = _to_int(grid.get((cr, start_c + 4)))
@@ -379,7 +425,12 @@ def parse_sheet_allocations(ws, year_month: str, maps: dict, conn) -> List[dict]
                 continue
 
             lab_code = lab_for_row(r)
-            fid = ensure_faculty(conn, initials, maps) if initials else None
+            fid = ensure_faculty(conn, initials, maps, displayed_name) if displayed_name else None
+            if fid:
+                initials = next(
+                    (code for code, faculty_id in maps["faculty"].items() if faculty_id == fid),
+                    initials,
+                )
             slot_id = maps["slots"].get(slot)
             day_id = maps["days"].get(day)
             lab_id = maps["labs"].get(lab_code)
@@ -441,7 +492,12 @@ def parse_sheet_metrics(ws, year_month: str) -> dict:
         "tts_batches": 0, "tts_students": 0,
         "report_path": None, "notes": "imported from historical Excel",
     }
-    rows = list(ws.iter_rows(min_row=55, max_row=100, max_col=75, values_only=True))
+    rows = list(ws.iter_rows(
+        min_row=min(55, ws.max_row or 55),
+        max_row=ws.max_row or 100,
+        max_col=ws.max_column or 75,
+        values_only=True,
+    ))
     for row in rows:
         for c, v in enumerate(row):
             if v is None:
@@ -484,12 +540,47 @@ def parse_sheet_metrics(ws, year_month: str) -> dict:
     return metrics
 
 
-def ensure_faculty(conn, initials: str, maps: dict) -> Optional[int]:
-    """Only use faculty already seeded from roster / Excel faculty table."""
+def ensure_faculty(conn, initials: str, maps: dict, display_name: str = "") -> Optional[int]:
+    """Resolve a roster member or create a missing faculty member from the sheet.
+
+    Unknown faculty names must not cause their allocation blocks to disappear.
+    Generated initials are deterministic and kept unique within the roster.
+    """
     key = (initials or "").upper()
-    if not key or not re.fullmatch(r"[A-Z]{1,5}", key):
+    if key and key in maps["faculty"]:
+        return maps["faculty"][key]
+
+    name = _cell_str(display_name).strip()
+    normal = _normalise_person_name(name)
+    if normal and normal in maps.get("faculty_names", {}):
+        resolved = maps["faculty_names"][normal]
+        return maps["faculty"].get(resolved)
+
+    if not name:
         return None
-    return maps["faculty"].get(key)
+    tokens = normal.split()
+    letters = "".join(tokens).upper() or re.sub(r"[^A-Z]", "", name.upper())
+    base = "".join(token[0] for token in tokens).upper() or "F"
+    candidates = [base[:5]]
+    candidates.extend((base + letters[i])[:5] for i in range(len(letters)))
+    candidates.extend(("F" + letters[i:i + 4])[:5] for i in range(len(letters)))
+    unique = next((candidate for candidate in candidates if candidate and candidate not in maps["faculty"]), None)
+    if not unique:
+        for suffix in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+            candidate = (base[:4] + suffix)[:5]
+            if candidate not in maps["faculty"]:
+                unique = candidate
+                break
+    if not unique:
+        return None
+
+    cur = conn.execute(
+        "INSERT INTO faculty (initials, full_name, status, active) VALUES (?, ?, 'V', 1)",
+        (unique, name),
+    )
+    maps["faculty"][unique] = cur.lastrowid
+    maps.setdefault("faculty_names", {})[normal] = unique
+    return cur.lastrowid
 
 
 def ensure_career(conn, code: str, maps: dict) -> Optional[int]:
@@ -618,7 +709,7 @@ def import_historical(path: Optional[Path] = None, replace_all: bool = True) -> 
             "slots": {r[0].upper(): r[1] for r in conn.execute("SELECT code, id FROM time_slots").fetchall()},
             "days": {r[0].upper(): r[1] for r in conn.execute("SELECT code, id FROM day_groups").fetchall()},
         }
-        for i in range(1, 8):
+        for i in range(1, 9):
             code = f"L{i}"
             if code not in maps["labs"]:
                 cur = conn.execute("INSERT INTO labs (lab_code, pcs, active) VALUES (?,20,1)", (code,))
